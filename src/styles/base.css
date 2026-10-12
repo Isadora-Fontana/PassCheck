@@ -1,0 +1,52 @@
+/* Paleta oficial e estilos gerais */
+
+:root {
+  --azul: #2563eb;
+  --azul-escuro: #1d4ed8;
+  --verde: #22c55e;
+  --preto: #000000;
+  --branco: #ffffff;
+
+  /* Tons neutros para fundo e bordas */
+  --cinza-fundo: #f3f4f6;
+  --cinza-borda: #d1d5db;
+  --cinza-texto: #4b5563;
+
+  --raio: 12px;
+  --espaco: 16px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background: var(--cinza-fundo);
+  color: var(--preto);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+#app {
+  max-width: 480px;
+  min-height: 100vh;
+  margin: 0 auto;
+  background: var(--branco);
+  display: flex;
+  flex-direction: column;
+}
+
+h1 {
+  font-size: 1.5rem;
+}
+
+h2 {
+  font-size: 1.125rem;
+}
+
+a {
+  color: var(--azul);
+}

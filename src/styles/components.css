@@ -1,0 +1,270 @@
+/* ---------- Estrutura das telas ---------- */
+
+.cabecalho {
+  background: var(--azul);
+  color: var(--branco);
+  padding: var(--espaco);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cabecalho h1 {
+  font-size: 1.25rem;
+  flex: 1;
+}
+
+.cabecalho a {
+  color: var(--branco);
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+
+.conteudo {
+  flex: 1;
+  padding: var(--espaco);
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco);
+}
+
+.subtitulo {
+  color: var(--cinza-texto);
+}
+
+/* ---------- Botões ---------- */
+
+.botao {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  border: none;
+  border-radius: var(--raio);
+  background: var(--azul);
+  color: var(--branco);
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.botao:hover {
+  background: var(--azul-escuro);
+}
+
+.botao-secundario {
+  background: var(--branco);
+  color: var(--azul);
+  border: 2px solid var(--azul);
+}
+
+.botao-secundario:hover {
+  background: var(--cinza-fundo);
+}
+
+/* ---------- Formulário ---------- */
+
+.formulario {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.campo label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.campo input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--cinza-borda);
+  border-radius: var(--raio);
+  font-size: 1rem;
+}
+
+.campo input:focus {
+  outline: 2px solid var(--azul);
+  border-color: var(--azul);
+}
+
+/* ---------- Login ---------- */
+
+.login {
+  justify-content: center;
+}
+
+.logo {
+  text-align: center;
+}
+
+.logo img {
+  width: 100%;
+  max-width: 320px;
+  height: auto;
+}
+
+/* ---------- Listas de seleção (eventos e portões) ---------- */
+
+.lista {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.item-lista {
+  display: block;
+  padding: var(--espaco);
+  border: 1px solid var(--cinza-borda);
+  border-radius: var(--raio);
+  color: var(--preto);
+  text-decoration: none;
+}
+
+.item-lista:hover {
+  border-color: var(--azul);
+}
+
+.item-lista strong {
+  display: block;
+  font-size: 1.05rem;
+}
+
+.item-lista span {
+  color: var(--cinza-texto);
+  font-size: 0.9rem;
+}
+
+/* ---------- Cartão de informação ---------- */
+
+.cartao {
+  padding: var(--espaco);
+  border-radius: var(--raio);
+  background: var(--cinza-fundo);
+}
+
+.cartao p + p {
+  margin-top: 4px;
+}
+
+/* ---------- Barra de status da operação ---------- */
+
+.barra-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 10px var(--espaco);
+  background: var(--preto);
+  color: var(--branco);
+  font-size: 0.85rem;
+}
+
+.selo-conexao {
+  font-weight: 700;
+}
+
+/* ---------- Scanner ---------- */
+
+.area-camera {
+  aspect-ratio: 1 / 1;
+  border-radius: var(--raio);
+  background: var(--preto);
+  color: var(--branco);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--espaco);
+}
+
+.simulacao {
+  border: 1px dashed var(--cinza-borda);
+  border-radius: var(--raio);
+  padding: 12px;
+}
+
+.simulacao p {
+  font-size: 0.85rem;
+  color: var(--cinza-texto);
+  margin-bottom: 8px;
+}
+
+.grade-botoes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.grade-botoes .botao {
+  font-size: 0.85rem;
+  padding: 10px;
+}
+
+/* ---------- Dashboard ---------- */
+
+.grade-numeros {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.numero {
+  padding: var(--espaco);
+  border-radius: var(--raio);
+  background: var(--cinza-fundo);
+}
+
+.numero strong {
+  display: block;
+  font-size: 1.75rem;
+}
+
+.numero span {
+  color: var(--cinza-texto);
+  font-size: 0.85rem;
+}
+
+/* ---------- Sobreposição de resultado da validação ---------- */
+
+.resultado {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: var(--espaco);
+  text-align: center;
+  color: var(--branco);
+  cursor: pointer;
+}
+
+.resultado-icone {
+  font-size: 6rem;
+  line-height: 1;
+}
+
+.resultado-titulo {
+  font-size: 2.25rem;
+  font-weight: 800;
+}
+
+.resultado-dica {
+  opacity: 0.8;
+  font-size: 0.9rem;
+}
+
+/* Verde apenas para sucesso */
+.resultado-valido {
+  background: var(--verde);
+}
+
+/* Recusas usam preto, mantendo a paleta oficial */
+.resultado-recusado {
+  background: var(--preto);
+}
