@@ -10,7 +10,14 @@ const resultados = {
   PORTAO_INCORRETO: { titulo: 'PORTÃO INCORRETO', icone: '⇄', classe: 'resultado-recusado' },
 };
 
-export function mostrarResultado(status) {
+/**
+ * Mostra o resultado em tela cheia.
+ * @param {string} status   uma das chaves de `resultados`
+ * @param {object} opcoes
+ * @param {string} [opcoes.codigo]    código do ingresso lido, exibido abaixo do título
+ * @param {Function} [opcoes.aoFechar] chamada quando a sobreposição é fechada
+ */
+export function mostrarResultado(status, { codigo, aoFechar } = {}) {
   const resultado = resultados[status];
 
   const sobreposicao = document.createElement('div');
@@ -18,12 +25,20 @@ export function mostrarResultado(status) {
   sobreposicao.innerHTML = `
     <div class="resultado-icone">${resultado.icone}</div>
     <div class="resultado-titulo">${resultado.titulo}</div>
+    <div class="resultado-codigo"></div>
     <div class="resultado-dica">Toque para continuar</div>
   `;
+  // textContent evita que o conteúdo do QR Code seja interpretado como HTML.
+  sobreposicao.querySelector('.resultado-codigo').textContent = codigo || '';
+
+  let fechada = false;
 
   function fechar() {
+    if (fechada) return;
+    fechada = true;
     clearTimeout(temporizador);
     sobreposicao.remove();
+    if (aoFechar) aoFechar();
   }
 
   const temporizador = setTimeout(fechar, TEMPO_EXIBICAO_MS);

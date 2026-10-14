@@ -166,18 +166,61 @@
   font-weight: 700;
 }
 
+/* Sem internet: selo invertido (branco com texto preto) para chamar atenção */
+.selo-offline {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--branco);
+  color: var(--preto);
+}
+
 /* ---------- Scanner ---------- */
 
 .area-camera {
-  aspect-ratio: 1 / 1;
+  position: relative;
+  min-height: 280px;
   border-radius: var(--raio);
   background: var(--preto);
   color: var(--branco);
+  overflow: hidden;
+}
+
+/* Elemento onde a biblioteca html5-qrcode coloca o vídeo da câmera.
+   O vídeo mantém sua proporção original (sem cortes), porque a biblioteca
+   calcula a área de leitura a partir do tamanho exibido do vídeo. */
+.leitor video {
+  display: block;
+  width: 100% !important;
+  height: auto !important;
+}
+
+.dica-leitura {
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--cinza-texto);
+}
+
+.dica-leitura.dica-erro {
+  color: var(--preto);
+  font-weight: 700;
+}
+
+/* Mensagens sobre a câmera (iniciando, permissão negada...) */
+.mensagem-camera {
+  position: absolute;
+  inset: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  text-align: center;
+  gap: var(--espaco);
   padding: var(--espaco);
+  text-align: center;
+  background: var(--preto);
+}
+
+.mensagem-camera[hidden] {
+  display: none;
 }
 
 .simulacao {
@@ -254,6 +297,11 @@
   font-weight: 800;
 }
 
+.resultado-codigo {
+  font-size: 1.1rem;
+  font-family: ui-monospace, monospace;
+}
+
 .resultado-dica {
   opacity: 0.8;
   font-size: 0.9rem;
@@ -267,4 +315,41 @@
 /* Recusas usam preto, mantendo a paleta oficial */
 .resultado-recusado {
   background: var(--preto);
+}
+
+/* ---------- Preparação do dispositivo ---------- */
+
+.etapas {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--cinza-texto);
+  font-size: 0.9rem;
+}
+
+.etapas:empty {
+  display: none;
+}
+
+.acoes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Mensagem de sucesso: verde apenas para indicar que deu certo */
+.confirmacao {
+  padding: 12px var(--espaco);
+  border-radius: var(--raio);
+  border: 2px solid var(--verde);
+  font-weight: 600;
+}
+
+/* Avisos e bloqueios usam preto, mantendo a paleta oficial */
+.aviso {
+  padding: 12px var(--espaco);
+  border-radius: var(--raio);
+  border-left: 4px solid var(--preto);
+  background: var(--cinza-fundo);
 }

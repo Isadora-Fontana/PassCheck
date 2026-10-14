@@ -1,2 +1,27 @@
-node_modules
-dist
+# Dependências
+node_modules/
+
+# Builds e arquivos gerados
+dist/
+build/
+coverage/
+*.log
+npm-debug.log*
+
+# Variáveis de ambiente
+.env
+.env.*
+!.env.example
+
+# Arquivos locais
+*.local
+.vite/
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Editores
+.vscode/
+.idea/
+*.swp

@@ -167,6 +167,7 @@ Deve armazenar pelo menos:
 
 - ingressoId
 - codigo
+- eventoId
 - portaoId
 - dataHora
 - dispositivo
