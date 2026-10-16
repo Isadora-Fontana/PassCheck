@@ -168,6 +168,7 @@ Deve armazenar pelo menos:
 - ingressoId
 - codigo
 - portaoId
+- eventoId
 - dataHora
 - dispositivo
 - sincronizado
@@ -302,3 +303,64 @@ Sempre preservar o funcionamento offline como requisito central.
 Ao encontrar uma decisão que dependa do back-end, informar antes de assumir um comportamento.
 
 Não alterar arquivos do back-end sem solicitação explícita.
+
+---
+
+## Progresso atual (atualizado em 16/10/2026)
+
+### Etapas
+
+| # | Etapa | Situação |
+|---|---|---|
+| 1 | Estrutura do front | Concluída. Repositório com `frontend/` e `backend/` separados. |
+| 2 | Interface e navegação | Concluída. Router por hash (`#/login`, `#/eventos`, ...). |
+| 3 | Dados mockados | Concluída. `src/mocks/eventos.js` e `src/mocks/ingressos.js`. |
+| 4 | Integração com API | **Pendente.** `src/api.js` ainda devolve os mocks; trocar o corpo das funções por `fetch`. |
+| 5 | IndexedDB | Concluída. `src/db.js`. |
+| 6 | Scanner QR | Concluída. `html5-qrcode@2.3.8` (versão fixa), testado no iPhone. |
+| 7 | Service Worker/PWA | Concluída. Testado offline no Chrome; falta teste completo no iPhone instalado. |
+| 8 | Validação offline | Concluída. |
+| 9 | Sincronização | **Pendente.** Próxima etapa. |
+| 10 | Dashboard | **Pendente.** Tela existe só com "—". |
+| 11 | Testes e acabamento | **Pendente.** |
+
+### Arquivos principais (`frontend/src/`)
+
+- `router.js`: rotas por hash.
+- `api.js`: único ponto de acesso à API (hoje usa mocks com atraso simulado em `buscarIngressos`).
+- `selecao.js`: evento/portão escolhidos, no `sessionStorage`.
+- `db.js`: todo acesso ao IndexedDB (banco `passcheck`, versão 1).
+- `screens/`: uma tela por arquivo.
+- `components/resultado.js`: sobreposição de resultado (aceita `codigo` e `aoFechar`).
+- `service-worker.js`: modelo do SW; o `/sw.js` final é gerado no build pelo plugin em `vite.config.js`.
+- `pwa.js`: registra o Service Worker (somente em produção).
+
+### Decisões já tomadas
+
+- **Preparação baixa os ingressos de TODOS os portões do evento** (chamando o endpoint de ingressos uma vez por portão). Os ingressos dos outros portões servem para identificar PORTÃO INCORRETO.
+- **Classificação** (`classificarIngresso` em `db.js`): não encontrado → INVÁLIDO; outro evento → INVÁLIDO; mesmo evento e outro portão → PORTÃO INCORRETO; já utilizado → JÁ UTILIZADO; senão → VÁLIDO.
+- **Validação atômica** (`validarIngresso` em `db.js`): em uma única transação, marca `utilizado: true` e cria a pendência. O resultado só é devolvido após a transação concluir; se falhar, VÁLIDO não é exibido.
+- **Identificador do dispositivo**: UUID salvo na store `operacao` com a chave `'dispositivo'` (o registro da operação usa a chave `'atual'`).
+- **Proteções da preparação** (`salvarPreparacao`): nunca apaga validações pendentes; não troca de evento/portão com pendências (também bloqueado na interface); ao preparar de novo o mesmo evento, ingressos utilizados localmente continuam utilizados.
+- **`ultimaSincronizacao`** é preenchida com a hora da preparação.
+- **Scanner**: lê só QR Code; pausa durante o resultado; ignora o mesmo código por 3 s após fechar; diferencia falha de leitura (dica abaixo da câmera) de código não cadastrado (INVÁLIDO).
+- **Service Worker**: cache-first para os arquivos do app; não faz cache de API nem de outros domínios; a versão do cache muda a cada build e o cache antigo é apagado na ativação; nunca mexe no IndexedDB.
+- **ONLINE/OFFLINE** usa `navigator.onLine` com os eventos `online`/`offline`.
+
+### A confirmar com o back-end (Gabriel)
+
+- Formato das respostas de `GET /eventos`, `GET /eventos/:eventoId/portoes` e `GET .../ingressos` (os mocks assumem arrays com `id` numérico; evento com `data` em `AAAA-MM-DD` e `local`).
+- Permitir que o operador baixe os ingressos de todos os portões do evento.
+- Formato do `POST /sincronizacao` (o front enviará os registros de `validacoesPendentes`).
+
+### Como testar
+
+- Desenvolvimento: `npm run dev` (sem Service Worker).
+- Offline/PWA: `npm run build && npm run preview` e túnel HTTPS (`cloudflared tunnel --url http://localhost:4173`). O `vite.config.js` aceita qualquer `*.trycloudflare.com`.
+- No iPhone, o app instalado na Tela de Início tem dados separados do Safari, e cada túnel novo é um endereço (origem) diferente.
+
+### Pendências conhecidas
+
+- Botões "Simular resultado (temporário)" no scanner ainda existem; o botão "Válido" não grava nada. Remover no acabamento.
+- "Última sincronização" no scanner ainda mostra "—".
+- Login é apenas visual; não há perfis de administrador/operador.
