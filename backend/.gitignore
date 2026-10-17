@@ -1,0 +1,12 @@
+node_modules/
+.npm-cache/
+data/
+backups/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.bak
+.env
+.env.*
+!.env.example

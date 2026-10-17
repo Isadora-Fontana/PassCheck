@@ -1,0 +1,29 @@
+{
+  "name": "passcheck-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fundação da API do PassCheck",
+  "type": "module",
+  "engines": {
+    "node": ">=24.14.0 <25"
+  },
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "test": "node --test",
+    "db:migrate": "node src/db/cli.js migrate",
+    "db:seed": "node src/db/cli.js seed",
+    "auth:bootstrap": "node src/auth-cli.js bootstrap",
+    "auth:criar-operador": "node src/auth-cli.js criar-operador"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.3",
+    "cors": "2.8.6",
+    "express": "5.3.0",
+    "jose": "6.2.12",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "supertest": "7.3.1"
+  }
+}
