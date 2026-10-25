@@ -63,6 +63,11 @@
   background: var(--cinza-fundo);
 }
 
+.botao:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ---------- Formulário ---------- */
 
 .formulario {
@@ -77,15 +82,21 @@
   margin-bottom: 4px;
 }
 
-.campo input {
+.campo input,
+.campo select,
+.linha-portao input {
   width: 100%;
   padding: 12px;
   border: 1px solid var(--cinza-borda);
   border-radius: var(--raio);
+  background: var(--branco);
+  color: var(--preto);
   font-size: 1rem;
 }
 
-.campo input:focus {
+.campo input:focus,
+.campo select:focus,
+.linha-portao input:focus {
   outline: 2px solid var(--azul);
   border-color: var(--azul);
 }
@@ -352,4 +363,139 @@
   border-radius: var(--raio);
   border-left: 4px solid var(--preto);
   background: var(--cinza-fundo);
+}
+
+/* ---------- Perfis de demonstração (gestor e operador) ---------- */
+
+.conteudo h2 {
+  margin-top: 8px;
+}
+
+/* Código do evento em destaque, para o gestor compartilhar */
+.codigo-evento {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: var(--espaco);
+  border: 2px solid var(--azul);
+  border-radius: var(--raio);
+  text-align: center;
+}
+
+.codigo-evento strong {
+  font-family: ui-monospace, monospace;
+  font-size: 1.75rem;
+  letter-spacing: 0.08em;
+  color: var(--azul);
+  word-break: break-all;
+}
+
+.codigo-evento small {
+  color: var(--cinza-texto);
+}
+
+.item-lista .codigo-pequeno {
+  display: block;
+  font-family: ui-monospace, monospace;
+  color: var(--azul);
+}
+
+/* Selo de estado da solicitação. Verde só para APROVADA (sucesso). */
+.selo-status {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--preto);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--preto);
+}
+
+.item-lista .selo-status {
+  color: var(--preto);
+}
+
+.selo-aprovada {
+  border-color: var(--verde);
+  background: var(--verde);
+  color: var(--branco);
+}
+
+.selo-rejeitada {
+  background: var(--preto);
+  color: var(--branco);
+}
+
+.lista-simples {
+  padding-left: 20px;
+}
+
+.solicitacao {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Formulário de evento: lista de portões */
+.grupo-portoes {
+  border: 1px solid var(--cinza-borda);
+  border-radius: var(--raio);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.grupo-portoes legend {
+  font-weight: 600;
+  padding: 0 4px;
+}
+
+#lista-portoes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.linha-portao {
+  display: flex;
+  gap: 8px;
+}
+
+.linha-portao input {
+  flex: 1;
+  min-width: 0;
+}
+
+.linha-portao .botao {
+  width: auto;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+}
+
+/* Troca de operação: confirmação obrigatória */
+.alerta-pendentes {
+  margin-top: 8px;
+  font-weight: 600;
+}
+
+.confirmacao-troca {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.95rem;
+}
+
+.confirmacao-troca input {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  flex-shrink: 0;
+  accent-color: var(--azul);
+}
+
+[hidden] {
+  display: none !important;
 }

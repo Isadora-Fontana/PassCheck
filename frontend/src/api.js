@@ -1,9 +1,13 @@
 // Funções de acesso à API.
-// Por enquanto devolvem os dados simulados de src/mocks/.
-// Na etapa 4 (integração com API), basta trocar o conteúdo destas funções
+// Por enquanto devolvem dados simulados:
+// - eventos e portões vêm dos dados de demonstração (src/demo/armazenamentoDemo.js),
+//   que começam com os mocks de src/mocks/eventos.js e incluem os eventos criados pelo gestor;
+// - ingressos vêm de src/mocks/ingressos.js.
+// O formato das respostas é o mesmo do contrato da API.
+// Na etapa de integração com a API, basta trocar o conteúdo destas funções
 // por chamadas fetch; as telas não precisam mudar.
 
-import { eventosMock, portoesMock } from './mocks/eventos.js';
+import { listarEventos, listarPortoesDoEvento } from './demo/armazenamentoDemo.js';
 import { ingressosMock } from './mocks/ingressos.js';
 
 // Atraso artificial para simular o tempo de resposta da rede.
@@ -15,12 +19,13 @@ function esperar(milissegundos) {
 
 // GET /eventos
 export async function buscarEventos() {
-  return eventosMock;
+  // O código do evento é um dado da demonstração e não faz parte desta resposta.
+  return listarEventos().map(({ id, nome, data, local }) => ({ id, nome, data, local }));
 }
 
 // GET /eventos/:eventoId/portoes
 export async function buscarPortoes(eventoId) {
-  return portoesMock.filter((portao) => portao.eventoId === eventoId);
+  return listarPortoesDoEvento(eventoId);
 }
 
 // GET /eventos/:eventoId/portoes/:portaoId/ingressos

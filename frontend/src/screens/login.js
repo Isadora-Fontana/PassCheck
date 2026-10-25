@@ -1,6 +1,8 @@
-// Tela de login (apenas visual nesta versão, sem autenticação real).
+// Tela de login de DEMONSTRAÇÃO.
+// Não há autenticação real: o usuário apenas escolhe com qual perfil quer testar.
+// A autenticação real será integrada depois com o back-end.
 
-import { irPara } from '../router.js';
+import { entrarComo, irParaInicioDoPerfil, PERFIS } from '../demo/perfilDemo.js';
 
 export function telaLogin(app) {
   app.innerHTML = `
@@ -10,23 +12,22 @@ export function telaLogin(app) {
       </h1>
       <p class="subtitulo" style="text-align: center">Controle de acesso para eventos</p>
 
-      <form class="formulario" id="form-login">
-        <div class="campo">
-          <label for="usuario">Usuário</label>
-          <input id="usuario" type="text" autocomplete="username" />
-        </div>
-        <div class="campo">
-          <label for="senha">Senha</label>
-          <input id="senha" type="password" autocomplete="current-password" />
-        </div>
-        <button class="botao" type="submit">Entrar</button>
-      </form>
+      <div class="aviso">
+        <strong>Modo demonstração.</strong> Não há autenticação real:
+        escolha um perfil para testar o sistema.
+      </div>
+
+      <div class="acoes">
+        <button class="botao" type="button" data-perfil="${PERFIS.GESTOR}">Entrar como gestor (demo)</button>
+        <button class="botao" type="button" data-perfil="${PERFIS.OPERADOR}">Entrar como operador (demo)</button>
+      </div>
     </section>
   `;
 
-  const formulario = app.querySelector('#form-login');
-  formulario.addEventListener('submit', (evento) => {
-    evento.preventDefault();
-    irPara('/eventos');
+  app.querySelectorAll('[data-perfil]').forEach((botao) => {
+    botao.addEventListener('click', () => {
+      entrarComo(botao.dataset.perfil);
+      irParaInicioDoPerfil();
+    });
   });
 }

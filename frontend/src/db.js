@@ -28,16 +28,37 @@ function abrirBanco() {
       const pedido = indexedDB.open(NOME_BANCO, VERSAO_BANCO);
 
       // Executado apenas quando o banco é criado ou a versão aumenta.
+      // Cada estrutura e índice só é criado se ainda não existir, para que uma
+      // futura versão do banco não falhe em aparelhos que já têm dados.
+      // Nada é apagado nem migrado aqui.
       pedido.onupgradeneeded = () => {
         const banco = pedido.result;
+        const transacaoAtualizacao = pedido.transaction;
 
-        const ingressos = banco.createObjectStore('ingressos', { keyPath: 'id' });
+        const ingressos = banco.objectStoreNames.contains('ingressos')
+          ? transacaoAtualizacao.objectStore('ingressos')
+          : banco.createObjectStore('ingressos', { keyPath: 'id' });
         // Índice para encontrar o ingresso pelo código lido no QR Code.
-        ingressos.createIndex('codigo', 'codigo', { unique: true });
+        if (!ingressos.indexNames.contains('codigo')) {
+          ingressos.createIndex('codigo', 'codigo', { unique: true });
+        }
 
-        banco.createObjectStore('operacao');
+        if (!banco.objectStoreNames.contains('operacao')) {
+          banco.createObjectStore('operacao');
+        }
 
-        banco.createObjectStore('validacoesPendentes', { keyPath: 'id', autoIncrement: true });
+        if (!banco.objectStoreNames.contains('validacoesPendentes')) {
+          banco.createObjectStore('validacoesPendentes', { keyPath: 'id', autoIncrement: true });
+        }
+      };
+
+      // Outra aba ainda usa uma conexão antiga e impede a atualização da versão.
+      // A abertura continua esperando (e conclui assim que a outra conexão fechar);
+      // o aviso evita que a espera fique silenciosa.
+      pedido.onblocked = () => {
+        console.warn(
+          'Atualização do banco local aguardando: feche as outras abas ou janelas do PassCheck.'
+        );
       };
 
       pedido.onsuccess = () => {
@@ -45,6 +66,13 @@ function abrirBanco() {
         // Se o navegador encerrar a conexão (comum no Safari do iPhone ao
         // voltar do segundo plano), a próxima chamada abre uma nova.
         banco.onclose = () => {
+          bancoAberto = null;
+        };
+        // Uma versão mais nova do aplicativo (em outra aba) precisa atualizar o banco:
+        // fecha esta conexão para não bloqueá-la. Transações em andamento terminam
+        // normalmente antes do fechamento, então nenhuma gravação é interrompida.
+        banco.onversionchange = () => {
+          banco.close();
           bancoAberto = null;
         };
         resolve(banco);
@@ -224,16 +252,26 @@ export async function contarValidacoesPendentes() {
  * e registra o portão em que este dispositivo vai operar.
  *
  * Regras de segurança:
- * - As validações pendentes nunca são apagadas aqui.
- * - Não troca de evento/portão se houver validações pendentes do portão anterior.
- * - Ao preparar novamente o mesmo evento, ingressos já marcados como utilizados
- *   neste dispositivo continuam utilizados, mesmo que a API ainda diga o contrário.
+ * - Sem a opção descartarOperacaoAnterior, as validações pendentes nunca são apagadas
+ *   e a troca de evento/portão é recusada se houver pendências do portão anterior.
+ * - Com descartarOperacaoAnterior (somente após o operador confirmar a troca na tela),
+ *   os dados locais da operação anterior são descartados: ingressos, utilizações locais
+ *   e validações pendentes. Decisão do MVP; entradas não sincronizadas se perdem.
+ * - Ao preparar novamente o mesmo evento sem descartar, ingressos já marcados como
+ *   utilizados neste dispositivo continuam utilizados, mesmo que a API ainda diga o contrário.
+ * - O identificador do dispositivo é sempre preservado.
  *
  * Tudo é gravado em uma única transação: ou salva tudo, ou nada.
  *
+ * @param {{ descartarOperacaoAnterior?: boolean }} [opcoes]
  * @returns {Promise<number>} quantidade de ingressos armazenados
  */
-export async function salvarPreparacao(evento, portao, ingressosRecebidos) {
+export async function salvarPreparacao(
+  evento,
+  portao,
+  ingressosRecebidos,
+  { descartarOperacaoAnterior = false } = {}
+) {
   const banco = await abrirBanco();
   const operacaoAtual = await obterOperacao();
 
@@ -242,7 +280,11 @@ export async function salvarPreparacao(evento, portao, ingressosRecebidos) {
     operacaoAtual.eventoId === evento.id &&
     operacaoAtual.portaoId === portao.id;
 
-  if (operacaoAtual && !mesmoPortao && (await contarValidacoesPendentes()) > 0) {
+  const trocaDeOperacao = operacaoAtual !== null && !mesmoPortao;
+  // Só descarta dados quando é de fato uma troca E o operador confirmou.
+  const descartar = trocaDeOperacao && descartarOperacaoAnterior;
+
+  if (trocaDeOperacao && !descartar && (await contarValidacoesPendentes()) > 0) {
     throw new Error('Existem validações pendentes de sincronização no portão atual.');
   }
 
@@ -250,7 +292,7 @@ export async function salvarPreparacao(evento, portao, ingressosRecebidos) {
 
   // Ids dos ingressos que este dispositivo já marcou como utilizados.
   const idsUtilizados = new Set();
-  if (mesmoEvento) {
+  if (mesmoEvento && !descartar) {
     const ingressosLocais = await lerTodos('ingressos');
     ingressosLocais
       .filter((ingresso) => ingresso.utilizado)
@@ -258,8 +300,13 @@ export async function salvarPreparacao(evento, portao, ingressosRecebidos) {
   }
 
   return new Promise((resolve, reject) => {
-    const transacao = banco.transaction(['ingressos', 'operacao'], 'readwrite');
+    const transacao = banco.transaction(['ingressos', 'operacao', 'validacoesPendentes'], 'readwrite');
     const estruturaIngressos = transacao.objectStore('ingressos');
+
+    // Troca confirmada: descarta as validações pendentes da operação anterior.
+    if (descartar) {
+      transacao.objectStore('validacoesPendentes').clear();
+    }
 
     // Remove os ingressos antigos e grava a lista nova do evento.
     estruturaIngressos.clear();

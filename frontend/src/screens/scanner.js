@@ -7,6 +7,9 @@ import { Html5Qrcode, Html5QrcodeScannerState, Html5QrcodeSupportedFormats } fro
 import { irPara } from '../router.js';
 import { mostrarResultado } from '../components/resultado.js';
 import { obterOperacao, validarIngresso, contarValidacoesPendentes } from '../db.js';
+import { obterAtribuicao } from '../demo/armazenamentoDemo.js';
+import { exigirPerfil, OPERADOR_DEMO, PERFIS } from '../demo/perfilDemo.js';
+import { escaparHtml } from '../html.js';
 
 // Depois de fechar um resultado, o mesmo código é ignorado por este tempo,
 // para não reabrir o resultado se o QR Code continuar na frente da câmera.
@@ -17,10 +20,21 @@ const DICA_FALHA_LEITURA =
   'QR Code detectado, mas não foi possível ler. Aproxime o código ou melhore a iluminação.';
 
 export async function telaScanner(app) {
-  // O scanner só pode ser usado depois que o dispositivo foi preparado.
+  if (!exigirPerfil(PERFIS.OPERADOR)) return;
+
+  // O scanner só pode ser usado depois que o dispositivo foi preparado
+  // para um evento aprovado, com o portão atribuído ao operador nesse evento.
+  // Se o gestor alterou o portão, o operador volta para "Meus eventos".
   const operacao = await obterOperacao().catch(() => null);
-  if (!operacao) {
-    irPara('/eventos');
+  const atribuicao = operacao ? obterAtribuicao(OPERADOR_DEMO.id, operacao.eventoId) : null;
+  const preparadoParaAtribuicao =
+    operacao !== null &&
+    atribuicao !== null &&
+    operacao.eventoId === atribuicao.evento.id &&
+    operacao.portaoId === atribuicao.portao.id;
+
+  if (!preparadoParaAtribuicao) {
+    irPara('/operador');
     return;
   }
 
@@ -37,7 +51,7 @@ export async function telaScanner(app) {
     </div>
 
     <section class="conteudo">
-      <p class="subtitulo">${operacao.eventoNome} · ${operacao.portaoNome}</p>
+      <p class="subtitulo">${escaparHtml(operacao.eventoNome)} · ${escaparHtml(operacao.portaoNome)}</p>
 
       <div class="area-camera">
         <div id="leitor" class="leitor"></div>
@@ -57,7 +71,7 @@ export async function telaScanner(app) {
         </div>
       </div>
 
-      <a class="botao botao-secundario" href="#/eventos">Encerrar operação</a>
+      <a class="botao botao-secundario" href="#/operador">Encerrar operação</a>
     </section>
   `;
 
