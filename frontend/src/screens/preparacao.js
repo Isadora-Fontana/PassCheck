@@ -1,210 +1,75 @@
-// Tela de preparação do dispositivo.
-// Baixa os ingressos de todos os portões do evento atribuído ao operador (por enquanto,
-// dados simulados) e salva no IndexedDB, para que o dispositivo possa validar sem internet.
-// Os ingressos dos outros portões permitem ao scanner identificar PORTÃO INCORRETO;
-// somente os do portão atribuído podem ser validados.
-// O scanner só fica disponível depois que a preparação termina com sucesso.
-
+// Preparação online, seguida de validação local independente da API.
 import { irPara } from '../router.js';
-import { buscarPortoes, buscarIngressos } from '../api.js';
-import { obterAtribuicao } from '../demo/armazenamentoDemo.js';
-import { exigirPerfil, OPERADOR_DEMO, PERFIS } from '../demo/perfilDemo.js';
-import { obterEvento } from '../selecao.js';
+import { buscarEventos, buscarPortoes, buscarIngressos, registrarInstalacao } from '../api.js';
+import { obterIdentidade, podeOperar, sessao } from '../sessao.js';
+import { obterEvento, obterPortao } from '../selecao.js';
 import { escaparHtml } from '../html.js';
-import {
-  obterOperacao,
-  contarIngressos,
-  contarIngressosDoPortao,
-  contarValidacoesPendentes,
-  salvarPreparacao,
-} from '../db.js';
+import { obterOperacao, obterIdDispositivo, contarValidacoesPendentes,
+  contarIngressosDoPortao, salvarPreparacao } from '../db.js';
 
-export async function telaPreparacao(app) {
-  if (!exigirPerfil(PERFIS.OPERADOR)) return;
-
-  // Evento escolhido em "Meus eventos". O operador só prepara eventos aprovados,
-  // sempre com o portão atribuído pelo gestor daquele evento.
-  const eventoEscolhido = obterEvento();
-  const atribuicao = eventoEscolhido ? obterAtribuicao(OPERADOR_DEMO.id, eventoEscolhido.id) : null;
-  if (!atribuicao) {
-    irPara('/operador');
+export async function telaPreparacao(app, { signal } = {}) {
+  if (!obterIdentidade()) { irPara('/login'); return; }
+  const me = await sessao.atualizarIdentidade({ signal });
+  const escolhido = obterEvento();
+  const portaoEscolhido = obterPortao();
+  if (!escolhido || !portaoEscolhido || !podeOperar(escolhido.id, portaoEscolhido.id)) {
+    irPara('/eventos'); return;
+  }
+  app.innerHTML = `<header class="cabecalho"><a href="#/eventos">← Voltar</a><h1>Preparar dispositivo</h1></header>
+    <section class="conteudo"><div id="contexto" class="cartao"></div>
+      <p id="mensagem" role="status">Verificando preparação...</p>
+      <ul class="etapas" id="etapas"></ul>
+      <div class="acoes"><button class="botao" id="preparar" disabled>Preparar dispositivo</button>
+        <a class="botao botao-secundario" id="continuar" href="#/scanner" hidden>Iniciar operação</a></div>
+    </section>`;
+  const mensagem = app.querySelector('#mensagem');
+  const botao = app.querySelector('#preparar');
+  const continuar = app.querySelector('#continuar');
+  const evento = (await buscarEventos({ signal })).find((item) => item.id === escolhido.id);
+  if (!evento) throw new Error('Evento não autorizado.');
+  const portoes = await buscarPortoes(evento.id, { signal });
+  const portao = portoes.find((item) => item.id === portaoEscolhido.id);
+  if (!portao || !podeOperar(evento.id, portao.id)) throw new Error('Portão não autorizado.');
+  const operacao = await obterOperacao();
+  const pendentes = await contarValidacoesPendentes();
+  if (signal?.aborted) return;
+  const mesma = operacao?.usuarioId === me.usuario.id && operacao.eventoId === evento.id && operacao.portaoId === portao.id;
+  app.querySelector('#contexto').innerHTML = `<p><strong>Evento:</strong> ${escaparHtml(evento.nome)}</p><p><strong>Portão:</strong> ${escaparHtml(portao.nome)}</p>`;
+  continuar.hidden = !mesma;
+  if (pendentes && !mesma) {
+    mensagem.textContent = 'Há validações pendentes na operação anterior. A troca está bloqueada e os dados foram preservados.';
     return;
   }
-  const { evento, portao } = atribuicao;
-
-  app.innerHTML = `
-    <header class="cabecalho">
-      <a href="#/operador">← Voltar</a>
-      <h1>Preparar dispositivo</h1>
-    </header>
-
-    <section class="conteudo">
-      <div class="cartao">
-        <p><strong>Evento:</strong> ${escaparHtml(evento.nome)}</p>
-        <p><strong>Portão:</strong> ${escaparHtml(portao.nome)}</p>
-        <p><strong>Ingressos deste portão:</strong> <span id="quantidade-portao">—</span></p>
-        <p><strong>Ingressos do evento:</strong> <span id="quantidade-evento">—</span></p>
-      </div>
-
-      <ul class="etapas" id="etapas"></ul>
-      <div class="acoes" id="acoes">
-        <p class="subtitulo">Verificando dados do dispositivo...</p>
-      </div>
-    </section>
-  `;
-
-  const tela = {
-    evento,
-    portao,
-    // Vira true somente depois que o operador confirma a troca de operação.
-    descartarOperacaoAnterior: false,
-    quantidadePortao: app.querySelector('#quantidade-portao'),
-    quantidadeEvento: app.querySelector('#quantidade-evento'),
-    etapas: app.querySelector('#etapas'),
-    acoes: app.querySelector('#acoes'),
-  };
-
-  try {
-    const operacaoAtual = await obterOperacao();
-    const pendentes = await contarValidacoesPendentes();
-
-    const mesmoPortao =
-      operacaoAtual !== null &&
-      operacaoAtual.eventoId === evento.id &&
-      operacaoAtual.portaoId === portao.id;
-
-    if (mesmoPortao) {
-      await mostrarQuantidades(tela);
-      mostrarPreparado(tela, 'Este dispositivo já está preparado para este portão.');
-    } else if (operacaoAtual) {
-      mostrarTroca(tela, operacaoAtual, pendentes);
-    } else {
-      mostrarInicio(tela);
-    }
-  } catch (erro) {
-    mostrarErro(tela, erro);
-  }
-}
-
-/**
- * Estado inicial: dispositivo ainda não preparado.
- */
-function mostrarInicio(tela) {
-  tela.acoes.innerHTML = `
-    <p class="subtitulo">
-      Baixe os ingressos deste portão para que o dispositivo possa validar mesmo sem internet.
-    </p>
-    <button class="botao" type="button" id="botao-preparar">Preparar dispositivo</button>
-  `;
-
-  tela.acoes.querySelector('#botao-preparar').addEventListener('click', () => preparar(tela));
-}
-
-/**
- * O dispositivo está preparado para outro evento/portão.
- * A troca é permitida (decisão do MVP), mas só depois de aviso e confirmação,
- * porque descarta os dados locais da operação anterior, inclusive validações pendentes.
- */
-function mostrarTroca(tela, operacaoAtual, pendentes) {
-  const avisoPendentes =
-    pendentes > 0
-      ? `<p class="alerta-pendentes">
-           Atenção: <strong>${pendentes} validação(ões) pendente(s)</strong> ainda não
-           foram sincronizadas e serão <strong>perdidas</strong>.
-         </p>`
-      : '<p>Não há validações pendentes.</p>';
-
-  tela.acoes.innerHTML = `
-    <div class="aviso">
-      <p>
-        Este dispositivo está preparado para
-        <strong>${escaparHtml(operacaoAtual.eventoNome)} · ${escaparHtml(operacaoAtual.portaoNome)}</strong>.
-        Ao trocar, os dados locais dessa operação serão descartados.
-      </p>
-      ${avisoPendentes}
-    </div>
-    <label class="confirmacao-troca">
-      <input type="checkbox" id="confirmar-troca" />
-      Confirmo a troca e o descarte dos dados locais da operação anterior.
-    </label>
-    <button class="botao" type="button" id="botao-preparar" disabled>Descartar e preparar</button>
-  `;
-
-  const caixa = tela.acoes.querySelector('#confirmar-troca');
-  const botao = tela.acoes.querySelector('#botao-preparar');
-
-  caixa.addEventListener('change', () => {
-    botao.disabled = !caixa.checked;
+  mensagem.textContent = mesma ? 'Dispositivo preparado. Você pode continuar ou atualizar o download.'
+    : 'Baixe os ingressos para operar sem internet. A preparação anterior será substituída após o download completo.';
+  botao.disabled = false;
+  botao.addEventListener('click', async () => {
+    botao.disabled = true;
+    continuar.hidden = true;
+    const etapas = app.querySelector('#etapas');
+    etapas.replaceChildren();
+    const etapa = (texto) => { const li = document.createElement('li'); li.textContent = texto; etapas.appendChild(li); };
+    try {
+      await sessao.atualizarIdentidade({ signal });
+      if (!podeOperar(evento.id, portao.id)) throw new Error('Sua permissão para este portão mudou.');
+      etapa('Registrando instalação desta conta...');
+      const dispositivo = await obterIdDispositivo(me.usuario.id);
+      await registrarInstalacao(dispositivo, { signal });
+      const ingressos = [];
+      for (const item of portoes) {
+        etapa('Baixando ingressos de ' + item.nome + '...');
+        ingressos.push(...await buscarIngressos(evento.id, item.id, { signal }));
+      }
+      if (signal?.aborted) return;
+      await sessao.atualizarIdentidade({ signal });
+      await salvarPreparacao(evento, portao, ingressos, { usuarioId: me.usuario.id, dispositivo,
+        confirmarIdentidade: () => !signal?.aborted && obterIdentidade()?.usuario.id === me.usuario.id && podeOperar(evento.id, portao.id) });
+      if (signal?.aborted) return;
+      mensagem.textContent = 'Dispositivo preparado: ' + await contarIngressosDoPortao(portao.id) + ' ingressos deste portão; ' + ingressos.length + ' no evento.';
+      continuar.hidden = false;
+      botao.textContent = 'Atualizar download';
+    } catch (error) {
+      if (!signal?.aborted) { mensagem.textContent = error.message + ' Os dados anteriores foram preservados.'; continuar.hidden = !mesma; }
+    } finally { botao.disabled = false; }
   });
-  botao.addEventListener('click', () => {
-    if (!caixa.checked) return;
-    tela.descartarOperacaoAnterior = true;
-    preparar(tela);
-  });
-}
-
-/**
- * Baixa os ingressos e grava no IndexedDB, mostrando o andamento.
- */
-async function preparar(tela) {
-  tela.etapas.innerHTML = '';
-  tela.acoes.innerHTML = '';
-
-  try {
-    registrarEtapa(tela, 'Buscando portões do evento...');
-    const portoesDoEvento = await buscarPortoes(tela.evento.id);
-
-    // Baixa os ingressos de cada portão do evento, um de cada vez.
-    const ingressos = [];
-    for (const portaoDoEvento of portoesDoEvento) {
-      registrarEtapa(tela, `Baixando ingressos do ${portaoDoEvento.nome}...`);
-      const recebidos = await buscarIngressos(tela.evento.id, portaoDoEvento.id);
-      ingressos.push(...recebidos);
-    }
-
-    registrarEtapa(tela, `${ingressos.length} ingressos recebidos. Salvando no dispositivo...`);
-    await salvarPreparacao(tela.evento, tela.portao, ingressos, {
-      descartarOperacaoAnterior: tela.descartarOperacaoAnterior,
-    });
-
-    // Depois de concluída, uma nova preparação é do mesmo portão: não há mais o que descartar.
-    tela.descartarOperacaoAnterior = false;
-    await mostrarQuantidades(tela);
-    mostrarPreparado(tela, 'Dispositivo preparado para trabalhar offline.');
-  } catch (erro) {
-    mostrarErro(tela, erro);
-  }
-}
-
-/**
- * Dispositivo pronto: libera o acesso ao scanner.
- */
-function mostrarPreparado(tela, mensagem) {
-  tela.acoes.innerHTML = `
-    <div class="confirmacao">✓ ${mensagem}</div>
-    <a class="botao" href="#/scanner">Iniciar operação</a>
-    <button class="botao botao-secundario" type="button" id="botao-preparar">Preparar novamente</button>
-  `;
-
-  tela.acoes.querySelector('#botao-preparar').addEventListener('click', () => preparar(tela));
-}
-
-function mostrarErro(tela, erro) {
-  tela.acoes.innerHTML = `
-    <div class="aviso">Não foi possível preparar o dispositivo. ${escaparHtml(erro.message)}</div>
-    <button class="botao" type="button" id="botao-preparar">Tentar novamente</button>
-  `;
-
-  tela.acoes.querySelector('#botao-preparar').addEventListener('click', () => preparar(tela));
-}
-
-async function mostrarQuantidades(tela) {
-  tela.quantidadePortao.textContent = await contarIngressosDoPortao(tela.portao.id);
-  tela.quantidadeEvento.textContent = await contarIngressos();
-}
-
-function registrarEtapa(tela, texto) {
-  const item = document.createElement('li');
-  item.textContent = texto;
-  tela.etapas.appendChild(item);
 }

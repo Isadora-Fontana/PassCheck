@@ -18,26 +18,32 @@ function parseParams(schema, params) {
 export function eventosRoutes(service, autenticar, identidade) {
   const router = Router();
 
-  router.get('/eventos', autenticar, (request, response) => {
-    response.json(identidade.listarEventos(request.identidade, service));
+  router.get('/eventos', autenticar, async (request, response) => {
+    response.json(await identidade.listarEventos(request.identidade, service));
   });
 
-  router.get('/eventos/:eventoId/resumo', autenticar, (request, response) => {
+  router.get('/eventos/:eventoId/resumo', autenticar, async (request, response) => {
     const { eventoId } = parseParams(eventParams, request.params);
-    identidade.exigirEvento(request.identidade, eventoId);
-    response.json(service.obterResumo(eventoId));
+    response.json(await identidade.leitura(async () => {
+      await identidade.exigirEvento(request.identidade, eventoId);
+      return service.obterResumo(eventoId);
+    }));
   });
 
-  router.get('/eventos/:eventoId/portoes', autenticar, (request, response) => {
+  router.get('/eventos/:eventoId/portoes', autenticar, async (request, response) => {
     const { eventoId } = parseParams(eventParams, request.params);
-    identidade.exigirEvento(request.identidade, eventoId);
-    response.json(service.listarPortoes(eventoId));
+    response.json(await identidade.leitura(async () => {
+      await identidade.exigirEvento(request.identidade, eventoId);
+      return service.listarPortoes(eventoId);
+    }));
   });
 
-  router.get('/eventos/:eventoId/portoes/:portaoId/ingressos', autenticar, (request, response) => {
+  router.get('/eventos/:eventoId/portoes/:portaoId/ingressos', autenticar, async (request, response) => {
     const { eventoId, portaoId } = parseParams(ticketParams, request.params);
-    identidade.exigirEvento(request.identidade, eventoId);
-    response.json(service.listarIngressos(eventoId, portaoId));
+    response.json(await identidade.leitura(async () => {
+      await identidade.exigirEvento(request.identidade, eventoId);
+      return service.listarIngressos(eventoId, portaoId);
+    }));
   });
 
   return router;

@@ -1,50 +1,37 @@
-// Tela de seleção do evento.
-// A lista vem de buscarEventos() (GET /eventos), por enquanto com dados simulados.
-
 import { buscarEventos } from '../api.js';
+import { obterIdentidade, sessao } from '../sessao.js';
+import { obterOperacao } from '../db.js';
 import { salvarEvento } from '../selecao.js';
+import { irPara } from '../router.js';
+import { escaparHtml, formatarData } from '../html.js';
 
-function formatarData(dataISO) {
-  const [ano, mes, dia] = dataISO.split('-');
-  return `${dia}/${mes}/${ano}`;
-}
-
-export async function telaEventos(app) {
-  app.innerHTML = `
-    <header class="cabecalho">
-      <h1>Eventos</h1>
-      <a href="#/login">Sair</a>
-    </header>
-
-    <section class="conteudo">
-      <p class="subtitulo">Selecione o evento em que você vai trabalhar.</p>
-      <ul class="lista" id="lista-eventos">
-        <li class="subtitulo">Carregando eventos...</li>
-      </ul>
-    </section>
-  `;
-
-  const eventos = await buscarEventos();
-  const lista = app.querySelector('#lista-eventos');
-
-  lista.innerHTML = eventos
-    .map(
-      (evento) => `
-        <li>
-          <a class="item-lista" href="#/portoes" data-id="${evento.id}">
-            <strong>${evento.nome}</strong>
-            <span>${formatarData(evento.data)} · ${evento.local}</span>
-          </a>
-        </li>
-      `
-    )
-    .join('');
-
-  // Antes de ir para a tela de portões, guarda qual evento foi escolhido.
-  lista.querySelectorAll('[data-id]').forEach((link) => {
-    link.addEventListener('click', () => {
-      const evento = eventos.find((e) => e.id === Number(link.dataset.id));
-      salvarEvento(evento);
-    });
+export async function telaEventos(app, { signal } = {}) {
+  const me = obterIdentidade();
+  if (!me) { irPara('/login'); return; }
+  app.innerHTML = `<header class="cabecalho"><h1>Meus eventos</h1><button id="sair" class="botao botao-secundario botao-sair">Sair</button></header>
+    <section class="conteudo"><p class="subtitulo">${escaparHtml(me.usuario.usuario)} · ${me.acessoGlobal ? 'Administrador' : 'Operador'}</p>
+      <div id="mensagem" role="status">Carregando eventos...</div><ul id="eventos" class="lista"></ul>
+      <a id="continuar" class="botao botao-secundario" href="#/scanner" hidden>Continuar operação preparada</a>
+    </section>`;
+  app.querySelector('#sair').addEventListener('click', async (event) => {
+    event.currentTarget.disabled = true;
+    try { await sessao.sair(); } catch { /* Saída local concluída; token remoto expira pelo TTL. */ }
+    irPara('/login');
   });
+  const operacao = await obterOperacao().catch(() => null);
+  if (signal?.aborted) return;
+  app.querySelector('#continuar').hidden = operacao?.usuarioId !== me.usuario.id;
+  try {
+    const eventos = await buscarEventos({ signal });
+    if (signal?.aborted) return;
+    app.querySelector('#mensagem').textContent = eventos.length ? 'Selecione um evento.' : 'Nenhum evento autorizado. Solicite acesso ao responsável pelo sistema.';
+    app.querySelector('#eventos').innerHTML = eventos.map((evento) => `<li><button class="item-lista botao-evento" data-id="${evento.id}" type="button">
+      <strong>${escaparHtml(evento.nome)}</strong><span>${escaparHtml(formatarData(evento.data))} · ${escaparHtml(evento.local)}</span></button></li>`).join('');
+    app.querySelectorAll('[data-id]').forEach((botao) => botao.addEventListener('click', () => {
+      salvarEvento(eventos.find((evento) => evento.id === Number(botao.dataset.id)));
+      irPara('/portoes');
+    }));
+  } catch (error) {
+    if (!signal?.aborted) app.querySelector('#mensagem').textContent = error.message;
+  }
 }

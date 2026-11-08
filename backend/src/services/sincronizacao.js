@@ -1,3 +1,4 @@
+import { databaseUnavailable } from '../db/access.js';
 import { createHash } from 'node:crypto';
 import { HttpError } from '../middleware/errors.js';
 
@@ -11,15 +12,15 @@ function exigirIdSeguro(id) {
 }
 
 export function createSincronizacaoService(repository, identidade) {
-  function processarItem(lote, item, correlacaoId) {
+  async function processarItem(lote, item, correlacaoId) {
     const content = JSON.stringify({
       eventoId: lote.eventoId, portaoId: lote.portaoId, ingressoId: item.ingressoId,
       codigo: item.codigo, dataHora: item.dataHora,
     });
-    const original = repository.buscarRecibo(lote.dispositivo, item.idLocal);
+    const original = await repository.buscarRecibo(lote.dispositivo, item.idLocal);
     if (original) {
       if (original.conteudo_normalizado !== content) {
-        repository.auditarDivergencia(original.id, correlacaoId, hash(original.conteudo_normalizado), hash(content));
+        await repository.auditarDivergencia(original.id, correlacaoId, hash(original.conteudo_normalizado), hash(content));
         return { idLocal: item.idLocal, status: 'REJEITADA', motivo: 'IDEMPOTENCIA_DIVERGENTE' };
       }
       if (original.status === 'CONFIRMADA') {
@@ -30,16 +31,16 @@ export function createSincronizacaoService(repository, identidade) {
       return { idLocal: item.idLocal, status: 'JA_PROCESSADA', resultadoOriginal: original.status, motivo: original.motivo };
     }
 
-    function recusar(motivo, status = 'REJEITADA') {
-      repository.inserirRecibo(lote.dispositivo, item.idLocal, content, status, motivo);
+    async function recusar(motivo, status = 'REJEITADA') {
+      await repository.inserirRecibo(lote.dispositivo, item.idLocal, content, status, motivo);
       return { idLocal: item.idLocal, status, motivo };
     }
 
-    if (!repository.eventoExiste(lote.eventoId)) return recusar('EVENTO_INEXISTENTE');
-    const portao = repository.buscarPortao(lote.portaoId);
+    if (!(await repository.eventoExiste(lote.eventoId))) return recusar('EVENTO_INEXISTENTE');
+    const portao = await repository.buscarPortao(lote.portaoId);
     if (!portao) return recusar('PORTAO_INEXISTENTE');
     if (portao.evento_id !== lote.eventoId) return recusar('PORTAO_INCOMPATIVEL');
-    const ingresso = repository.buscarIngresso(item.ingressoId);
+    const ingresso = await repository.buscarIngresso(item.ingressoId);
     if (!ingresso) return recusar('INGRESSO_INEXISTENTE');
     if (ingresso.codigo !== item.codigo) return recusar('CODIGO_INCOMPATIVEL');
     if (ingresso.evento_id !== lote.eventoId) return recusar('EVENTO_INCOMPATIVEL');
@@ -47,23 +48,23 @@ export function createSincronizacaoService(repository, identidade) {
     if (ingresso.utilizado !== Number(ingresso.validacao_id !== null)) throw new Error('Estado de utilização inconsistente.');
     if (ingresso.validacao_id !== null) return recusar('INGRESSO_JA_UTILIZADO', 'CONFLITO');
 
-    const receiptId = repository.inserirRecibo(lote.dispositivo, item.idLocal, content, 'CONFIRMADA', null);
-    const validacaoId = repository.inserirValidacao(item.ingressoId, receiptId, item.dataHora);
+    const receiptId = await repository.inserirRecibo(lote.dispositivo, item.idLocal, content, 'CONFIRMADA', null);
+    const validacaoId = await repository.inserirValidacao(item.ingressoId, receiptId, item.dataHora);
     return { idLocal: item.idLocal, status: 'CONFIRMADA', validacaoId: exigirIdSeguro(validacaoId) };
   }
 
   return {
-    sincronizar(lote, correlacaoId, principal) {
+    async sincronizar(lote, correlacaoId, principal) {
       const resultados = [];
       try {
         for (const item of lote.validacoes) {
-          resultados.push(repository.transacao(() => {
-            identidade.exigirSincronizacao(principal, lote);
+          resultados.push(await repository.transacao(async () => {
+            await identidade.exigirSincronizacao(principal, lote);
             return processarItem(lote, item, correlacaoId);
           }));
         }
       } catch (error) {
-        if (error.code === 'SQLITE_BUSY' || error.code?.startsWith('SQLITE_BUSY_')) {
+        if (databaseUnavailable(error)) {
           throw new HttpError(503, 'BANCO_INDISPONIVEL', 'Não foi possível concluir o lote. Tente novamente.');
         }
         throw error;

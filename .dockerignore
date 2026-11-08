@@ -1,0 +1,14 @@
+.git
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+**/data
+**/backups
+**/.npm-cache
+**/*.log
+**/*.sqlite*
+**/*.db*
+.codex
+.agents
+.aws

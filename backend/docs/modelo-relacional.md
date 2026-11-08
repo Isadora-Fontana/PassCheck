@@ -1,5 +1,15 @@
 # Modelo relacional — Etapa 2
 
+Atualização da Etapa 8: a migração 005 acrescenta `resolucoes_administrativas`
+STRICT, com PK id, UNIQUE recebimento_id/FK recebimentos, administrador_id/FK
+usuarios, status_administrativo RESOLVIDA, justificativa e data_hora_servidor UTC.
+Trigger exige recibo CONFLITO/REJEITADA e administrador ativo; UPDATE e DELETE
+são proibidos, inclusive a exclusão implícita em REPLACE com triggers recursivos.
+Não há cascata para recibos, validações ou usuários. Índice parcial em
+recebimentos(json_extract(conteudo_normalizado, '$.eventoId'), id), somente para
+CONFLITO/REJEITADA, atende a listagem paginada. 001–004 permanecem intactas.
+Detalhes: [contrato-administracao.md](contrato-administracao.md).
+
 Atualização da Etapa 7: a migração aditiva `004_identidade_acesso.sql` acrescenta:
 
 | Tabela | Chaves e finalidade |

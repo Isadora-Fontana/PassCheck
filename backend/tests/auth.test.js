@@ -20,7 +20,7 @@ import { temporaryDirectory } from './helpers/database.js';
 import { openDatabase } from '../src/db/connection.js';
 import { migrate } from '../src/db/migrate.js';
 
-const senha = randomBytes(24).toString('base64url');
+const senha = randomBytes(6).toString('hex') + 'A!';
 const senhaHash = await hashSenha(senha);
 const config = readConfig();
 const tokens = createTokens(config);
@@ -80,7 +80,7 @@ test('auth: senha errada, usuário ausente e inativo recebem o mesmo 401', async
   const { app, database, logs } = await setup(t);
   database.prepare('UPDATE usuarios SET ativo = 0 WHERE id = 3').run();
   const results = [];
-  for (const body of [{ usuario: 'operador', senha: 'senha-errada-longa' }, { usuario: 'nao-existe', senha }, { usuario: 'outro', senha }]) {
+  for (const body of [{ usuario: 'operador', senha: 'Errada123!' }, { usuario: 'nao-existe', senha }, { usuario: 'outro', senha }]) {
     const r = await request(app).post('/auth/login').send(body).expect(401).expect('WWW-Authenticate', 'Bearer');
     results.push(r.body);
   }
@@ -276,7 +276,7 @@ test('auth: autorização é reavaliada dentro de cada transação antes de cons
   const body = payload();
   body.validacoes[0].dataHora = '2026-11-20T22:03:27.000Z';
   body.validacoes.push({ ...body.validacoes[0], idLocal: '18' });
-  assert.throws(() => createSincronizacaoService(repo, identity).sincronizar(body, randomUUID(), { id: 2, versao_token: 0 }), { status: 403 });
+  await assert.rejects(() => createSincronizacaoService(repo, identity).sincronizar(body, randomUUID(), { id: 2, versao_token: 0 }), { status: 403 });
   assert.equal(receiptsRead, 1);
   assert.equal(database.prepare("SELECT count(*) n FROM recebimentos WHERE dispositivo = 'auth-device'").get().n, 1);
   assert.equal(database.prepare('SELECT count(*) n FROM validacoes WHERE ingresso_id = 1').get().n, 1);
@@ -340,7 +340,7 @@ test('auth: upgrade 001–003 para 004 preserva dados, auditoria e checksums sem
   const before = snapshot(database);
   const audit = database.prepare('SELECT * FROM auditoria_divergencias').all();
   const history = database.prepare('SELECT * FROM schema_migrations').all();
-  assert.deepEqual(migrate(database), { applied: ['004_identidade_acesso.sql'], currentVersion: 4 });
+  assert.deepEqual(migrate(database), { applied: ['004_identidade_acesso.sql', '005_resolucoes_administrativas.sql'], currentVersion: 5 });
   assert.deepEqual(snapshot(database), before);
   assert.deepEqual(database.prepare('SELECT * FROM auditoria_divergencias').all(), audit);
   assert.deepEqual(database.prepare('SELECT * FROM schema_migrations WHERE version <= 3').all(), history);

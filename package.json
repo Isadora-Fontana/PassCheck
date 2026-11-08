@@ -1,0 +1,20 @@
+{
+  "name": "passcheck-workspace",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24.14.0 <25" },
+  "scripts": {
+    "deps": "npm --prefix backend ci && npm --prefix frontend ci",
+    "setup": "node scripts/setup.mjs",
+    "setup:docker": "node scripts/configurar-docker.mjs",
+    "admin": "node backend/src/provisionar-interativo.js bootstrap",
+    "operador": "node backend/src/provisionar-interativo.js criar-operador",
+    "backup": "node backend/src/db/backup-cli.js",
+    "dev:api": "npm --prefix backend run dev",
+    "dev:web": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "start": "npm --prefix backend start",
+    "test": "node --test frontend/tests/*.test.js && npm --prefix backend test -- --test-concurrency=1",
+    "test:browser": "node scripts/verificar-navegador.mjs"
+  }
+}

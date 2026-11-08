@@ -30,7 +30,7 @@ test('auth HTTP real: CLI, login, permissões, reenvio e revogação persistem a
   const path = join(temporaryDirectory(t), 'auth-http.sqlite');
   const database = openDatabase(path);
   migrate(database); seedDevelopment(database, 'development');
-  const senha = randomBytes(24).toString('base64url');
+  const senha = randomBytes(6).toString('hex') + 'A!';
   let running;
   try {
     const boot = await cli(path, 'bootstrap', { usuario: 'admin-http', senha });

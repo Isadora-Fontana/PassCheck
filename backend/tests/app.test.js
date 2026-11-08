@@ -31,7 +31,7 @@ test('rotas fora do escopo continuam ausentes e retornam erro 404 padronizado', 
     assert.deepEqual(response.body, { erro: 'ROTA_NAO_ENCONTRADA', mensagem: 'Rota não encontrada.' });
   }
   await request(app).post('/api/sincronizacao').send({}).expect(404);
-  await request(app).post('/eventos').send({}).expect(404);
+  await request(app).post('/eventos').send({}).expect(401);
 });
 
 test('origem permitida recebe CORS específico; preflight anuncia GET e POST', async (t) => {
@@ -40,7 +40,7 @@ test('origem permitida recebe CORS específico; preflight anuncia GET e POST', a
     .expect(200).expect('Access-Control-Allow-Origin', 'http://localhost:5173');
   const response = await request(app).options('/health')
     .set('Origin', 'http://localhost:5173').set('Access-Control-Request-Method', 'GET')
-    .expect(204).expect('Access-Control-Allow-Methods', 'GET,POST');
+    .expect(204).expect('Access-Control-Allow-Methods', 'GET,POST,PATCH');
   assert.equal(response.headers['access-control-allow-credentials'], undefined);
 });
 

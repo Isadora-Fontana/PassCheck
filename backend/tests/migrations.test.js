@@ -10,8 +10,8 @@ test('migrações criam o modelo e repetir não modifica dados nem histórico', 
   const database = memoryDatabase(t);
   const before = snapshot(database);
   const history = database.prepare('SELECT * FROM schema_migrations ORDER BY version').all();
-  assert.deepEqual(history.map((row) => row.version), [1, 2, 3, 4]);
-  assert.deepEqual(migrate(database), { applied: [], currentVersion: 4 });
+  assert.deepEqual(history.map((row) => row.version), [1, 2, 3, 4, 5]);
+  assert.deepEqual(migrate(database), { applied: [], currentVersion: 5 });
   assert.deepEqual(snapshot(database), before);
   assert.deepEqual(database.prepare('SELECT * FROM schema_migrations ORDER BY version').all(), history);
   assert.deepEqual(database.pragma('foreign_key_check'), []);

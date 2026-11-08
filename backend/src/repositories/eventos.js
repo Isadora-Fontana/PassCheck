@@ -1,5 +1,8 @@
+import { createPostgresEventosRepository } from '../db/postgres/repositories.js';
+import { protectSqliteRepository } from '../db/access.js';
 export function createEventosRepository(database) {
-  return {
+  if (database.dialect === 'postgres') return createPostgresEventosRepository(database);
+  return protectSqliteRepository(database, {
     listarEventos() {
       return database.prepare('SELECT id, nome, data, local FROM eventos ORDER BY id').all();
     },
@@ -51,5 +54,5 @@ export function createEventosRepository(database) {
         .all(eventoId, portaoId)
         .map((ingresso) => ({ ...ingresso, utilizado: ingresso.utilizado === 1 }));
     },
-  };
+  });
 }

@@ -51,7 +51,9 @@ self.addEventListener('fetch', (evento) => {
 
   // Só cuida de leituras (GET) do próprio site. Chamadas à API e a outros
   // endereços seguem direto para a rede, sem cache.
-  if (pedido.method !== 'GET' || url.origin !== self.location.origin) return;
+  if (pedido.method !== 'GET' || url.origin !== self.location.origin
+    || url.pathname === '/api' || url.pathname.startsWith('/api/')
+    || pedido.headers.has('Authorization')) return;
 
   // Abrir ou recarregar o aplicativo: sempre entrega o index.html do cache.
   // As telas usam endereços com # (ex.: /#/scanner), então todas usam o mesmo arquivo.

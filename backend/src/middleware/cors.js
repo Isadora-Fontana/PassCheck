@@ -9,8 +9,9 @@ export function restrictedCors(origins) {
       if (!origin || allowed.has(origin)) return callback(null, true);
       return callback(new HttpError(403, 'ORIGEM_NAO_PERMITIDA', 'Origem não permitida.'));
     },
-    methods: ['GET', 'POST'],
+    methods: ['GET', 'POST', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    exposedHeaders: ['Retry-After'],
     credentials: false,
     maxAge: 600,
   });

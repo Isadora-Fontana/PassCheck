@@ -164,7 +164,7 @@ test('resumo: falha técnica no meio do lote conta somente commits anteriores', 
   assert.deepEqual(database.pragma('foreign_key_check'), []);
 });
 
-test('resumo: contagens inconsistentes geram erro sem limitar artificialmente valores', () => {
+test('resumo: contagens inconsistentes geram erro sem limitar artificialmente valores', async () => {
   const base = { evento: 'Teste', totalIngressos: 1, entradas: 1, portoes: [{ id: 1, nome: 'A', entradas: 1 }] };
   const bad = [
     { ...base, entradas: 2 }, { ...base, totalIngressos: -1 }, { ...base, entradas: 0 },
@@ -174,7 +174,7 @@ test('resumo: contagens inconsistentes geram erro sem limitar artificialmente va
   for (const result of bad) {
     const before = structuredClone(result);
     const service = createEventosService({ obterResumo: () => result });
-    assert.throws(() => service.obterResumo(1), { status: 500, code: 'INDICADORES_INCONSISTENTES' });
+    await assert.rejects(() => service.obterResumo(1), { status: 500, code: 'INDICADORES_INCONSISTENTES' });
     assert.deepEqual(result, before);
   }
 });

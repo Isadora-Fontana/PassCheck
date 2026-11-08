@@ -1,5 +1,21 @@
 # Decisões da fundação — 16/10/2026
 
+## D10 — Integração inicial e preparação de hospedagem, 30/10/2026
+
+Após análise somente leitura e explicação de impacto, riscos, preservação e
+reversão, Gabriel autorizou começar pela etapa 1 e preparar execução/hospedagem.
+Foram integrados login, identidade, eventos, portões e preparação do dispositivo.
+Mantidos os papéis ADMINISTRADOR global e OPERADOR, os JSONs e as rotas originais;
+o servidor conjunto também oferece a API em `/api` para a PWA na mesma origem.
+Token em memória, vínculo local de proprietário e bloqueio de troca com pendências.
+O schema existente 001–005 foi verificado e preservado; nenhuma tabela adicional
+foi necessária nesta etapa. Foram preparados setup, provisionamento interativo,
+backup consistente e arquivos Docker/HTTPS. A configuração local recebeu segredo
+aleatório privado; o primeiro usuário continua dependendo de provisionamento
+explícito, sem credenciais padrão. Sincronização no frontend e gestão por evento
+são próximas entregas. Evidências em
+[INTEGRACAO_ETAPA_1.md](../../docs/INTEGRACAO_ETAPA_1.md).
+
 ## D01 — Stack aprovada
 
 Responsável: Gabriel. Estado: aprovada expressamente na solicitação de retomada
@@ -207,3 +223,37 @@ nas origens configuradas. Frontend, mocks, IndexedDB e Service Worker preservado
 
 Evidências e continuidade: [validacao-etapa-7.md](validacao-etapa-7.md).
 Nenhuma autorização para iniciar a Etapa 8 está implícita nesta entrega.
+
+## D09 — Administração mínima autorizada na Etapa 8, em 20/10/2026
+
+Gabriel autorizou seis endpoints administrativos, CSV atômico e encerramento
+auditável de recibos CONFLITO/REJEITADA. Contratos documentados antes do código em
+[contrato-administracao.md](contrato-administracao.md), sem alterar os JSONs
+existentes de GET, resumo ou sincronização.
+
+- Somente ADMINISTRADOR ativo, com JWT e versão atuais. Autenticação/papel antes
+  do corpo; revalidação dentro de cada transação. CORS acrescenta PATCH às mesmas
+  origens, sem tratar CORS como autorização.
+- Cadastro de eventos/portões com IDs atribuídos pelo SQLite; PATCH somente de
+  metadados do evento. Confirmados não têm identidade/vínculos/horários alterados.
+- CSV direto text/csv UTF-8, cabeçalhos codigo,eventoId,portaoId; 1000 registros,
+  102400 bytes. Validar sintaxe, códigos globais e vínculos dentro de transação
+  IMMEDIATE. Erros por linha em 422; nenhuma importação parcial ou sobrescrita.
+- Migração 005 aditiva e imutável: resolucoes_administrativas, UNIQUE por recibo,
+  FK de administrador, justificativa e horário do servidor; trigger de elegibilidade
+  e proibição de UPDATE/DELETE/REPLACE. Índice parcial de recibos por evento/id.
+- Resolver significa encerrar a revisão administrativa, sem nova confirmação ou
+  modificação do resultado original. Reenvio continua recuperando o fato anterior;
+  dashboard conta as mesmas validações. Resolução duplicada recebe 409.
+- Listagem paginada por evento DECLARADO no recibo, filtros de estado administrativo
+  separados do status de sincronização. Apenas admins podem consultar; acesso
+  futuro do operador à decisão exigirá contrato restrito próprio, sem limpar fila.
+- Auditoria de IDEMPOTENCIA_DIVERGENTE não é novo recibo rejeitado. A 005 não
+  transforma recibo confirmado em pendência nem resolve essas tentativas isoladas.
+
+Pré-requisitos: 123 testes aprovados, banco de desenvolvimento íntegro em 001–003,
+004 pendente nele conforme a entrega anterior e validada em banco isolado. A
+pendência de ativação é preservada: nenhuma migração, usuário ou dado permanente
+foi alterado. Fonte, testes e migração nova são entregues sem commit/push/deploy.
+
+Evidências: [validacao-etapa-8.md](validacao-etapa-8.md). Etapa 9 exige autorização.

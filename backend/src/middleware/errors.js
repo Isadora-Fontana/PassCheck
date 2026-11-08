@@ -20,7 +20,8 @@ export function errorHandler(logger = console) {
       if (error.status === 503) response.set('Retry-After', '1');
       if (error.status === 429) response.set('Retry-After', String(error.retryAfter ?? 1));
       if (error.status === 401) response.set('WWW-Authenticate', 'Bearer');
-      return response.status(error.status).json({ erro: error.code, mensagem: error.message });
+      return response.status(error.status).json({ erro: error.code, mensagem: error.message,
+        ...(error.code === 'CSV_INVALIDO' ? { linhas: error.linhas } : {}) });
     }
 
     if (error instanceof URIError && error.status === 400) {

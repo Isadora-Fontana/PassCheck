@@ -139,6 +139,16 @@
   border-color: var(--azul);
 }
 
+.botao-evento {
+  width: 100%;
+  background: var(--branco);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.botao-sair { width: auto; }
+
 .item-lista strong {
   display: block;
   font-size: 1.05rem;

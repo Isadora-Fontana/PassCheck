@@ -1,5 +1,8 @@
+import { createPostgresSincronizacaoRepository } from '../db/postgres/repositories.js';
+import { protectSqliteRepository } from '../db/access.js';
 export function createSincronizacaoRepository(database) {
-  return {
+  if (database.dialect === 'postgres') return createPostgresSincronizacaoRepository(database);
+  return protectSqliteRepository(database, {
     transacao(callback) {
       return database.transaction(callback).immediate();
     },
@@ -41,5 +44,5 @@ export function createSincronizacaoRepository(database) {
         VALUES (?, ?, 'IDEMPOTENCIA_DIVERGENTE', ?, ?)`)
         .run(recebimentoId, correlacaoId, hashOriginal, hashApresentado);
     },
-  };
+  });
 }

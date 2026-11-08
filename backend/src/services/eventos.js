@@ -1,19 +1,19 @@
 import { HttpError } from '../middleware/errors.js';
 
 export function createEventosService(repository) {
-  function exigirEvento(eventoId) {
-    if (!repository.eventoExiste(eventoId)) {
+  async function exigirEvento(eventoId) {
+    if (!(await repository.eventoExiste(eventoId))) {
       throw new HttpError(404, 'EVENTO_NAO_ENCONTRADO', 'Evento não encontrado.');
     }
   }
 
   return {
-    listarEventos() {
+    async listarEventos() {
       return repository.listarEventos();
     },
 
-    obterResumo(eventoId) {
-      const resumo = repository.obterResumo(eventoId);
+    async obterResumo(eventoId) {
+      const resumo = await repository.obterResumo(eventoId);
       if (!resumo) throw new HttpError(404, 'EVENTO_NAO_ENCONTRADO', 'Evento não encontrado.');
       const { evento, totalIngressos, entradas, portoes } = resumo;
       const counts = [totalIngressos, entradas, ...portoes.map((portao) => portao.entradas)];
@@ -25,14 +25,14 @@ export function createEventosService(repository) {
       return { evento, totalIngressos, entradas, restantes: totalIngressos - entradas, portoes };
     },
 
-    listarPortoes(eventoId) {
-      exigirEvento(eventoId);
+    async listarPortoes(eventoId) {
+      await exigirEvento(eventoId);
       return repository.listarPortoes(eventoId);
     },
 
-    listarIngressos(eventoId, portaoId) {
-      exigirEvento(eventoId);
-      if (!repository.portaoPertenceAoEvento(eventoId, portaoId)) {
+    async listarIngressos(eventoId, portaoId) {
+      await exigirEvento(eventoId);
+      if (!(await repository.portaoPertenceAoEvento(eventoId, portaoId))) {
         throw new HttpError(404, 'PORTAO_NAO_ENCONTRADO', 'Portão não encontrado neste evento.');
       }
       return repository.listarIngressos(eventoId, portaoId);

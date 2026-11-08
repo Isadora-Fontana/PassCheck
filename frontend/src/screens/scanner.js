@@ -7,8 +7,7 @@ import { Html5Qrcode, Html5QrcodeScannerState, Html5QrcodeSupportedFormats } fro
 import { irPara } from '../router.js';
 import { mostrarResultado } from '../components/resultado.js';
 import { obterOperacao, validarIngresso, contarValidacoesPendentes } from '../db.js';
-import { obterAtribuicao } from '../demo/armazenamentoDemo.js';
-import { exigirPerfil, OPERADOR_DEMO, PERFIS } from '../demo/perfilDemo.js';
+import { obterIdentidade, podeOperar } from '../sessao.js';
 import { escaparHtml } from '../html.js';
 
 // Depois de fechar um resultado, o mesmo código é ignorado por este tempo,
@@ -19,22 +18,13 @@ const DICA_PADRAO = 'Aponte a câmera para o QR Code do ingresso.';
 const DICA_FALHA_LEITURA =
   'QR Code detectado, mas não foi possível ler. Aproxime o código ou melhore a iluminação.';
 
-export async function telaScanner(app) {
-  if (!exigirPerfil(PERFIS.OPERADOR)) return;
-
-  // O scanner só pode ser usado depois que o dispositivo foi preparado
-  // para um evento aprovado, com o portão atribuído ao operador nesse evento.
-  // Se o gestor alterou o portão, o operador volta para "Meus eventos".
-  const operacao = await obterOperacao().catch(() => null);
-  const atribuicao = operacao ? obterAtribuicao(OPERADOR_DEMO.id, operacao.eventoId) : null;
-  const preparadoParaAtribuicao =
-    operacao !== null &&
-    atribuicao !== null &&
-    operacao.eventoId === atribuicao.evento.id &&
-    operacao.portaoId === atribuicao.portao.id;
-
-  if (!preparadoParaAtribuicao) {
-    irPara('/operador');
+export async function telaScanner(app, { signal } = {}) {
+  const operacao = await obterOperacao();
+  if (signal?.aborted) return;
+  const me = obterIdentidade();
+  if (!operacao?.usuarioId || !operacao.dispositivo
+    || (me && (me.usuario.id !== operacao.usuarioId || !podeOperar(operacao.eventoId, operacao.portaoId)))) {
+    irPara(me ? '/eventos' : '/login');
     return;
   }
 
@@ -47,7 +37,7 @@ export async function telaScanner(app) {
     <div class="barra-status">
       <span class="selo-conexao" id="selo-conexao"></span>
       <span>Pendentes: <span id="pendentes">—</span></span>
-      <span>Última sincronização: —</span>
+      <span>Envio ao servidor: próxima etapa</span>
     </div>
 
     <section class="conteudo">
@@ -59,19 +49,7 @@ export async function telaScanner(app) {
       </div>
       <p class="dica-leitura" id="dica-leitura">${DICA_PADRAO}</p>
 
-      <!-- TEMPORÁRIO (etapa 1): botões para visualizar a sobreposição de resultado.
-           Serão removidos quando a leitura real do QR Code for implementada. -->
-      <div class="simulacao">
-        <p>Simular resultado (temporário)</p>
-        <div class="grade-botoes">
-          <button class="botao botao-secundario" data-status="VALIDO">Válido</button>
-          <button class="botao botao-secundario" data-status="JA_UTILIZADO">Já utilizado</button>
-          <button class="botao botao-secundario" data-status="INVALIDO">Inválido</button>
-          <button class="botao botao-secundario" data-status="PORTAO_INCORRETO">Portão incorreto</button>
-        </div>
-      </div>
-
-      <a class="botao botao-secundario" href="#/operador">Encerrar operação</a>
+      <a class="botao botao-secundario" href="#/eventos">Encerrar operação</a>
     </section>
   `;
 
@@ -180,7 +158,9 @@ export async function telaScanner(app) {
 
     try {
       const status = await validarIngresso(codigo, operacao);
+      if (signal?.aborted) return;
       exibirResultado(status, codigo);
+      if (signal?.aborted) return;
       if (status === 'VALIDO') atualizarPendentes();
     } catch (erro) {
       // A gravação falhou: nada foi registrado e o ingresso NÃO deve ser aceito.
@@ -230,7 +210,7 @@ export async function telaScanner(app) {
       // O operador saiu enquanto a câmera ainda estava abrindo.
       if (saiuDaTela) leitor.stop().catch(() => {});
     } catch (erro) {
-      mostrarErroCamera(mensagemCamera, erro, iniciarCamera);
+      if (!saiuDaTela) mostrarErroCamera(mensagemCamera, erro, iniciarCamera);
     }
   }
 
@@ -248,12 +228,6 @@ export async function telaScanner(app) {
     },
     { once: true }
   );
-
-  app.querySelectorAll('[data-status]').forEach((botao) => {
-    botao.addEventListener('click', () => {
-      if (!processandoLeitura) exibirResultado(botao.dataset.status);
-    });
-  });
 
   window.addEventListener('online', atualizarConexao);
   window.addEventListener('offline', atualizarConexao);

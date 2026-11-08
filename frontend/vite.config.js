@@ -68,24 +68,18 @@ function gerarServiceWorker() {
   }
 }
 
-// Hosts autorizados para acessar o PassCheck
-const enderecosPermitidos = [
-  'localhost',
-  '127.0.0.1',
-  'portions-avoid-distances-housing.trycloudflare.com',
-  '.trycloudflare.com',
-]
+const proxy = { '/api': { target: 'http://127.0.0.1:3000' } }
 
 export default defineConfig({
   plugins: [gerarServiceWorker()],
 
   server: {
     host: '127.0.0.1',
-    allowedHosts: enderecosPermitidos,
+    proxy,
   },
 
   preview: {
     host: '127.0.0.1',
-    allowedHosts: enderecosPermitidos,
+    proxy,
   },
 })

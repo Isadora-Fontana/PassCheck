@@ -13,9 +13,9 @@ export function salvarPortao(portao) {
 }
 
 export function obterEvento() {
-  return JSON.parse(sessionStorage.getItem('evento'));
+  try { return JSON.parse(sessionStorage.getItem('evento')); } catch { return null; }
 }
 
 export function obterPortao() {
-  return JSON.parse(sessionStorage.getItem('portao'));
+  try { return JSON.parse(sessionStorage.getItem('portao')); } catch { return null; }
 }
