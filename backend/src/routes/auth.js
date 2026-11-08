@@ -14,14 +14,14 @@ export function authRoutes(service, autenticar) {
   router.post('/auth/login', async (request, response) => {
     response.json(await service.login(validar(credenciaisSchema, request.body)));
   });
-  router.get('/auth/me', autenticar, (request, response) => response.json(service.me(request.identidade)));
-  router.post('/auth/logout', autenticar, (request, response) => {
-    service.logout(request.identidade);
+  router.get('/auth/me', autenticar, async (request, response) => response.json(await service.me(request.identidade)));
+  router.post('/auth/logout', autenticar, async (request, response) => {
+    await service.logout(request.identidade);
     response.sendStatus(204);
   });
-  router.post('/auth/instalacoes', (request, response) => {
+  router.post('/auth/instalacoes', async (request, response) => {
     const { dispositivo } = validar(z.object({ dispositivo: dispositivoSchema }).strict(), request.body);
-    response.json(service.registrar(request.identidade, dispositivo));
+    response.json(await service.registrar(request.identidade, dispositivo));
   });
   return router;
 }

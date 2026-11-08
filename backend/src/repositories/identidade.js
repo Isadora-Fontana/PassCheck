@@ -1,6 +1,10 @@
+import { createPostgresIdentidadeRepository } from '../db/postgres/repositories.js';
+import { protectSqliteRepository } from '../db/access.js';
 export function createIdentidadeRepository(database) {
-  return {
+  if (database.dialect === 'postgres') return createPostgresIdentidadeRepository(database);
+  return protectSqliteRepository(database, {
     transacao: (fn) => database.transaction(fn).immediate(),
+    leitura: (fn) => database.transaction(fn)(),
     porLogin: (usuario) => database.prepare('SELECT * FROM usuarios WHERE usuario = ?').get(usuario),
     porId: (id) => database.prepare('SELECT * FROM usuarios WHERE id = ?').get(id),
     eventoPermitido: (id, evento) => Boolean(database.prepare(
@@ -16,5 +20,5 @@ export function createIdentidadeRepository(database) {
     possuiRecibos: (dispositivo) => Boolean(database.prepare('SELECT 1 FROM recebimentos WHERE dispositivo = ? LIMIT 1').get(dispositivo)),
     registrar: (dispositivo, id) => database.prepare('INSERT INTO instalacoes (dispositivo, usuario_id) VALUES (?, ?)').run(dispositivo, id),
     revogar: (id) => database.prepare('UPDATE usuarios SET versao_token = versao_token + 1 WHERE id = ?').run(id),
-  };
+  });
 }

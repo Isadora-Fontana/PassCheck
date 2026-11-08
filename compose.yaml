@@ -1,0 +1,45 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    init: true
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET no .env da raiz}
+      JWT_TTL_SECONDS: ${JWT_TTL_SECONDS:-900}
+      CORS_ORIGINS: ${PUBLIC_ORIGIN:-http://localhost:3000}
+      TRUST_PROXY_HOPS: "1"
+      DATABASE_ENGINE: ${DATABASE_ENGINE:-sqlite}
+      DATABASE_URL: ${DATABASE_URL:-}
+      DATABASE_SCHEMA: ${DATABASE_SCHEMA:-passcheck}
+      PG_SSL_MODE: verify-full
+      PG_POOL_MAX: ${PG_POOL_MAX:-5}
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - passcheck_data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+  https:
+    image: caddy:2-alpine
+    profiles: [publico]
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+volumes:
+  passcheck_data:
+  caddy_data:
+  caddy_config:

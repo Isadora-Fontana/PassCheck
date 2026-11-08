@@ -13,14 +13,25 @@
     "test": "node --test",
     "db:migrate": "node src/db/cli.js migrate",
     "db:seed": "node src/db/cli.js seed",
+    "db:pg:check": "node src/db/postgres/cli.js check",
+    "db:pg:preflight": "node src/db/postgres/deployment-cli.js preflight",
+    "db:pg:verify-import": "node src/db/postgres/deployment-cli.js verify-import",
+    "db:verify-backup": "node src/db/postgres/deployment-cli.js verify-backup",
+    "db:pg:migrate": "node src/db/postgres/cli.js migrate",
+    "db:pg:seed": "node src/db/postgres/cli.js seed",
+    "db:pg:import-sqlite": "node src/db/postgres/cli.js import-sqlite",
+    "test:pg:unit": "node --test tests/postgres-foundation.test.js tests/postgres-deployment.test.js",
+    "test:pg:integration": "node --test --test-concurrency=1 tests/postgres-integration.test.js tests/postgres-api.test.js tests/postgres-login-limit.test.js",
     "auth:bootstrap": "node src/auth-cli.js bootstrap",
     "auth:criar-operador": "node src/auth-cli.js criar-operador"
   },
   "dependencies": {
+    "@vercel/functions": "3.10.6",
     "better-sqlite3": "13.0.3",
     "cors": "2.8.6",
     "express": "5.3.0",
     "jose": "6.2.12",
+    "pg": "8.23.1",
     "zod": "4.6.7"
   },
   "devDependencies": {

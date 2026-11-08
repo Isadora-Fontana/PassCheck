@@ -41,13 +41,13 @@ export function exigirJsonSincronizacao(request, _response, next) {
 
 export function sincronizacaoRoutes(service) {
   const router = Router();
-  router.post('/sincronizacao', (request, response) => {
+  router.post('/sincronizacao', async (request, response) => {
     if (Array.isArray(request.body?.validacoes) && request.body.validacoes.length > 100) {
       throw new HttpError(413, 'LOTE_MUITO_GRANDE', 'Lote excede o limite de 100 itens.');
     }
     const result = batchSchema.safeParse(request.body);
     if (!result.success) throw new HttpError(400, 'LOTE_INVALIDO', 'Lote de validações inválido.');
-    response.json(service.sincronizar(result.data, randomUUID(), request.identidade));
+    response.json(await service.sincronizar(result.data, randomUUID(), request.identidade));
   });
   return router;
 }

@@ -1,5 +1,17 @@
 # Autenticação e autorização — contratos mínimos da Etapa 7
 
+Atualização da integração em 30/10/2026: o frontend usa login real e registra
+instalação antes da preparação. Token em memória; operação/fila guardam proprietário
+e instalação. O estado atual está em
+[INTEGRACAO_ETAPA_1.md](../../docs/INTEGRACAO_ETAPA_1.md). As descrições de
+frontend ainda demonstrativo abaixo registram a situação original da Etapa 7.
+
+Atualização da Etapa 8: cadastro de eventos/portões, PATCH de evento, importação
+CSV e consulta/resolução de pendências exigem ADMINISTRADOR. Endpoints, limites
+e auditoria estão em [contrato-administracao.md](contrato-administracao.md).
+Os contratos de autenticação abaixo permanecem iguais; as referências à ausência
+de administração descrevem o escopo da Etapa 7.
+
 Definidos antes da implementação em 17/10/2026, no escopo autorizado por Gabriel.
 Não alteram os JSONs de sucesso dos GETs de negócio ou de POST /sincronizacao.
 
@@ -26,7 +38,8 @@ Não alteram os JSONs de sucesso dos GETs de negócio ou de POST /sincronizacao.
 
 Corpo estrito `{ "usuario": "operador", "senha": "senha informada pelo usuário" }`.
 Login normalizado com trim/lowercase, 3–64 caracteres ASCII `[a-z0-9._-]`, primeiro
-alfanumérico. Senha não é normalizada: 12–128 caracteres, máximo 512 bytes UTF-8.
+alfanumérico. Senha não é normalizada: 8–14 caracteres, com pelo menos uma letra
+maiúscula e um caractere especial (pontuação ou símbolo; espaço não conta).
 Resposta 200: `{ "accessToken": "<JWT>", "tokenType": "Bearer", "expiresIn": 900,
 "usuario": {"id": 1, "usuario": "operador", "papel": "OPERADOR"} }`.
 `expiresIn` segue JWT_TTL_SECONDS; IDs são atribuídos pelo SQLite, exemplo apenas.

@@ -9,7 +9,11 @@ test('configuração local tem padrões restritos e caminho relativo ao backend'
   assert.equal(config.host, '127.0.0.1');
   assert.equal(config.port, 3000);
   assert.equal(config.databasePath, resolve(backendDirectory, 'data/passcheck.sqlite'));
-  assert.deepEqual(config.corsOrigins, ['http://localhost:5173', 'http://localhost:4173']);
+  assert.deepEqual(config.corsOrigins, [
+    'http://localhost:5173', 'http://localhost:4173',
+    'http://127.0.0.1:5173', 'http://127.0.0.1:4173',
+    'http://localhost:3000', 'http://127.0.0.1:3000',
+  ]);
 });
 
 test('converte porta e normaliza lista de origens exatas', () => {

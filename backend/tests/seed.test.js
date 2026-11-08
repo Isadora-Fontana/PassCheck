@@ -95,7 +95,7 @@ test('seed só executa em development e exige migrações completas', (t) => {
   const empty = openDatabase(':memory:');
   t.after(() => empty.close());
   assert.throws(() => seedDevelopment(empty, 'development'), /Execute npm run db:migrate/);
-  database.prepare('DELETE FROM schema_migrations WHERE version = 4').run();
+  database.prepare('DELETE FROM schema_migrations WHERE version = 5').run();
   assert.throws(() => seedDevelopment(database, 'development'), /migrações pendentes/);
 });
 
@@ -147,7 +147,7 @@ test('CLI aplica migrações e seed sem depender do diretório de trabalho', asy
   };
   const cli = resolve(backendDirectory, 'src/db/cli.js');
   const migrated = await execute(process.execPath, [cli, 'migrate'], options);
-  assert.equal(JSON.parse(migrated.stdout).currentVersion, 4);
+  assert.equal(JSON.parse(migrated.stdout).currentVersion, 5);
   const seeded = await execute(process.execPath, [cli, 'seed'], options);
   assert.equal(JSON.parse(seeded.stdout).inserted.ingressos, 22);
   const repeated = await execute(process.execPath, [cli, 'seed'], options);

@@ -1,9 +1,27 @@
 # PassCheck — backend
 
-Fundação, persistência central, APIs de leitura, sincronização, resumo e autenticação (Etapas 1–7). Stack aprovada por Gabriel: Node.js, Express, SQLite,
+**Integração atual (30/10/2026):** login, consultas e preparação do frontend usam
+a API real. Para executar frontend e backend juntos, siga o
+[guia de hospedagem](../docs/EXECUCAO_E_HOSPEDAGEM.md) e o
+[relatório de integração](../docs/INTEGRACAO_ETAPA_1.md).
+`npm run setup` na raiz configura o ambiente local, preserva um backup consistente
+e verifica/aplica migrações. A conta administrativa é criada por terminal com
+`npm run admin`, sem senha padrão. Os registros abaixo de etapas anteriores
+permanecem como histórico.
+
+Fundação, persistência central, APIs de leitura, sincronização, resumo, autenticação e administração mínima (Etapas 1–8). Stack aprovada por Gabriel: Node.js, Express, SQLite,
 JavaScript com ES Modules, Zod, Node.js Test Runner e Supertest.
 O PEI IV é referência funcional/conceitual; a escolha técnica está registrada em
 [docs/decisoes.md](docs/decisoes.md).
+
+Preparação da integração (Etapa 1, 25/10/2026):
+[relatório, backup, prontidão e plano de integração](docs/preparacao-integracao-etapa-1.md).
+Após autorização explícita em 25/10/2026, o banco de trabalho recebeu as migrações
+004–005, com novo backup consistente e preservação dos registros anteriores.
+Os detalhes estão na seção 11 do relatório. Nenhuma conta foi criada; configurar
+o segredo operacional e provisionar o administrador continuam pendentes.
+Os comandos abaixo são referência de instalação, não autorização para seeds
+ou outras alterações desse banco.
 
 ## Instalação
 
@@ -44,13 +62,13 @@ têm precedência. Alterações no `.env` exigem reiniciar o comando de desenvol
 | `DATABASE_PATH` | `./data/passcheck.sqlite` | Caminho não vazio; relativo a `backend/`, ou `:memory:` |
 | `JWT_SECRET` | Sem padrão | Base64url canônico de 32–64 bytes aleatórios |
 | `JWT_TTL_SECONDS` | `900` | Inteiro de 60 a 3600 segundos |
-| `CORS_ORIGINS` | `http://localhost:5173,http://localhost:4173` | Origens HTTP(S) exatas separadas por vírgula |
+| `CORS_ORIGINS` | `http://localhost:5173,http://localhost:4173,http://127.0.0.1:5173,http://127.0.0.1:4173` | Origens HTTP(S) exatas separadas por vírgula |
 
 `CORS_ORIGINS` não aceita curingas, caminhos, credenciais na URL, barra final ou
 itens vazios. Em `production`, é obrigatório defini-la explicitamente. Origem
 não autorizada recebe 403; cliente sem `Origin` continua sujeito à autenticação/autorização.
 CORS controla acesso entre origens no navegador e **não substitui autenticação**.
-O preflight permite Content-Type/Authorization e anuncia GET e POST para as mesmas origens permitidas, sem cookies de sessão.
+O preflight permite Content-Type/Authorization e anuncia GET, POST e PATCH para as mesmas origens permitidas, sem cookies de sessão.
 
 Configuração inválida encerra o processo com código 1 antes de abrir banco/porta.
 A mensagem identifica os nomes das variáveis inválidas, sem imprimir seus valores.
@@ -96,14 +114,40 @@ O health check verifica a conexão, sem afirmar que tabelas de negócio existem,
 que há espaço para gravação ou que o produto está pronto. Falha na consulta
 retorna 500 genérico. Rotas desconhecidas retornam 404.
 
+### Prontidão: GET /ready
+
+Use `/ready` para decidir se o schema está preparado para a API. A rota pública
+verifica histórico/checksums das migrações, tabelas STRICT e colunas obrigatórias,
+presença dos índices/triggers requeridos e proteções da conexão SQLite.
+Ela faz somente leituras, sem migração, seed ou criação de contas.
+
+```powershell
+Invoke-RestMethod -Uri http://127.0.0.1:3000/ready
+```
+
+- Pronto: HTTP 200, `{"status":"ready","database":"ok"}`.
+- Não pronto: HTTP 503, `{"status":"not_ready"}`, `Retry-After: 5`.
+- Ambas as respostas usam `Cache-Control: no-store`; falhas não expõem detalhes do schema.
+
+Banco vazio, antigo ou com histórico divergente não passa na prontidão, mesmo
+que `/health` continue respondendo 200. Não há migrações automáticas no startup.
+O monitor/deploy deve usar `/ready`, não `/health`, para liberar tráfego de negócio.
+Os contratos e a ordem de autorização das rotas de negócio foram preservados;
+esta rota não adiciona um bloqueio global a elas.
+
+Prontidão estrutural não garante contas provisionadas, espaço livre, permissão
+de escrita, integridade de cada registro ou disponibilidade da rede. A verificação
+não compara integralmente o DDL de constraints/triggers com uma cópia de referência;
+integridade e preservação de dados são verificadas separadamente na validação das migrações.
+
 ## Autenticação e ativação local
 
 Contrato completo e política offline: [contrato-autenticacao.md](docs/contrato-autenticacao.md).
 Relatório executado: [validacao-etapa-7.md](docs/validacao-etapa-7.md).
 
-A Etapa 7 preservou o banco de desenvolvimento em 001–003. Para ativá-la nesse
+As Etapas 7–8 preservaram o banco de desenvolvimento em 001–003. Para ativá-las nesse
 banco, o responsável deve guardar backup consistente, configurar uma chave
-aleatória estável e executar a migração 004 e o provisionamento. Nada disso é
+aleatória estável e executar as migrações 004–005 e o provisionamento. Nada disso é
 automático no startup. Remover código não reverte migrações; uma restauração
 exige preservar primeiro os dados posteriores, que seriam perdidos no backup.
 
@@ -156,6 +200,7 @@ Essa ferramenta só insere usuários/concessões, sem redefinição ou CRUD HTTP
 | POST /auth/logout | Bearer; 204, revoga todos os JWTs do usuário |
 | POST /auth/instalacoes | Bearer; registra dispositivo próprio antes da preparação |
 | GET /health | Público; conexão SQLite |
+| GET /ready | Público; 200 se histórico/schema compatíveis, 503 caso contrário |
 | GET /eventos e subordinados | Bearer; somente eventos concedidos ao operador |
 | POST /sincronizacao | Bearer; evento/portão concedidos e instalação própria ativa |
 
@@ -267,6 +312,41 @@ do frontend nesta entrega. Exemplos HTTP realmente executados,
 concorrência, rollback e cobertura T01–T24 estão no
 [relatório da Etapa 5](docs/validacao-etapa-5.md).
 
+## Administração mínima, CSV e resoluções
+
+Todos os endpoints abaixo exigem ADMINISTRADOR ativo e JWT válido. Operadores
+recebem 403, inclusive se tiverem concessão para o evento. As rotas de leitura e
+sincronização anteriores conservam seus formatos e permissões.
+
+| Endpoint | Sucesso |
+|---|---|
+| POST /eventos | 201 com evento criado: id, nome, data, local |
+| PATCH /eventos/:eventoId | 200 com evento atualizado; aceita subconjunto não vazio de nome/data/local |
+| POST /eventos/:eventoId/portoes | 201 com id, eventoId, nome |
+| POST /eventos/:eventoId/ingressos/importar | 201 com eventoId e importados |
+| GET /eventos/:eventoId/pendencias | 200 com pendencias e proximoCursor |
+| POST /pendencias/:recebimentoId/resolver | 201 com statusOriginal, statusAdministrativo e auditoria da resolução |
+
+Importação recebe CSV diretamente no corpo, Content-Type text/csv; charset=utf-8,
+cabeçalho codigo,eventoId,portaoId. Até 1000 registros e 102400 bytes. UTF-8
+estrito, BOM opcional, vírgula e LF/CRLF; aspas escapadas aceitas, campos com
+quebras de linha recusados. Todos os códigos/vínculos são validados na transação;
+duplicidade ou linha inválida retorna 422 com linhas/motivos e não importa nada.
+Falha técnica em qualquer inserção reverte o lote. Nenhum ingresso é sobrescrito.
+
+Resolução exige justificativa de 10–1000 caracteres. A migração 005 registra
+administrador, recibo e horário do servidor em tabela imutável. Status
+administrativo RESOLVIDA é separado de CONFLITO/REJEITADA; não confirma ingresso,
+não muda dashboard nem o resultado do reenvio. Duplicidade retorna 409.
+Não há exclusões ou painel visual. Nenhum dado de IndexedDB é apagado.
+
+Consulta paginada: estado=PENDENTE (padrão), RESOLVIDA ou TODAS; apos=0 e
+limite=50 (máximo 100). Só administradores consultam a resolução. Integração
+futura da fila do operador requer contrato próprio, sem remover essa proteção.
+
+Contratos completos e exemplos: [contrato-administracao.md](docs/contrato-administracao.md).
+Resultados executados: [validacao-etapa-8.md](docs/validacao-etapa-8.md).
+
 ## Organização
 
 ```text
@@ -310,10 +390,11 @@ triggers recursivos, WAL para banco em arquivo e espera de até 5 segundos por l
 usado nos testes não mantém WAL. Banco e arquivos auxiliares ficam ignorados pelo
 Git, assim como `node_modules`, cache npm, `.env` e backups.
 
-Há quatro migrações: modelo central, integridade das confirmações, auditoria de divergências e identidade/acesso. Elas criam
+Há cinco migrações: modelo central, integridade das confirmações, auditoria de divergências, identidade/acesso e resoluções administrativas. Elas criam
 `eventos`, `portoes`, `ingressos`, `recebimentos`, `validacoes`, `auditoria_divergencias` e a tabela técnica
 `schema_migrations`. A 004 acrescenta `usuarios`, `usuarios_eventos`,
-`usuarios_portoes` e `instalacoes`, sem contas automáticas. O executor registra checksum e horário; arquivos já aplicados
+`usuarios_portoes` e `instalacoes`, sem contas automáticas. A 005 acrescenta
+`resolucoes_administrativas` e índice para pendências por evento. O executor registra checksum e horário; arquivos já aplicados
 não devem ser editados. Todas as migrações pendentes de uma execução são atômicas.
 Um erro reverte o lote, preservando versões já confirmadas. A API não migra ao
 iniciar. Não há exclusão, reset nem recriação automática de dados existentes.
@@ -373,7 +454,8 @@ etapa própria.
 
 Estão disponíveis health, as três listagens GET, o resumo por evento e POST de
 sincronização, além de login, identidade, logout e registro de instalação.
-Não há CRUD administrativo HTTP. O frontend continua usando seus
+Há cadastro/atualização de eventos, cadastro de portões, importação CSV e resolução
+administrativa auditável; não há exclusões nem painel visual. O frontend continua usando seus
 mocks e não foi modificado. A compatibilidade dos dados foi verificada, mas a
 integração nas telas, operação offline e desempenho em campo não foram testados.
 
@@ -395,4 +477,15 @@ das migrações 001/002 e os dados existentes. A migração foi aplicada sem alt
 os registros das cinco tabelas anteriores. Não executar os exemplos de escrita
 ou testes destrutivos contra o banco de desenvolvimento compartilhado.
 
-**Etapa 7 concluída em bancos isolados. Etapa 8 depende de nova autorização de Gabriel.**
+**Etapa 8 concluída em bancos isolados. Etapa 9 depende de nova autorização de Gabriel.**
+
+## Preparação PostgreSQL
+
+A preparação inicial está em [migracao-postgresql-etapa-1.md](docs/migracao-postgresql-etapa-1.md).
+A API e os comandos de provisionamento agora permitem selecionar PostgreSQL explicitamente;
+veja a configuração e os limites de validação em [migracao-postgresql-etapa-2.md](docs/migracao-postgresql-etapa-2.md).
+**SQLite continua sendo o padrão e o banco local não foi trocado.**
+A origem contém registros que devem ser preservados. Não use seed no destino da transferência.
+
+A [etapa 3](docs/migracao-postgresql-etapa-3.md) descreve criação/conexão do projeto Supabase,
+diagnóstico somente leitura (`db:pg:preflight`), conferência de backup/importação e plano do corte.

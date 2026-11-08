@@ -1,15 +1,17 @@
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createApp } from './app.js';
+import { createHostingApp } from './hosting.js';
 import { ConfigurationError, loadConfig } from './config.js';
-import { openDatabase } from './db/connection.js';
+import { openConfiguredDatabase } from './db/runtime.js';
+import { assertDatabaseReady } from './db/readiness.js';
 
 export async function startServer(config, { logger = console } = {}) {
-  const database = openDatabase(config.databasePath);
+  const database = await openConfiguredDatabase(config, { logger });
   let server;
   try {
-    const app = createApp({ config, database, logger });
+    if (config.nodeEnv === 'production' || database.dialect === 'postgres') await assertDatabaseReady(database);
+    const app = createHostingApp({ config, database, logger });
     server = createServer(app);
     await new Promise((resolveListen, reject) => {
       server.once('error', reject);
@@ -19,19 +21,17 @@ export async function startServer(config, { logger = console } = {}) {
       });
     });
   } catch (error) {
-    database.close();
+    await database.close();
     throw error;
   }
 
   let closing;
   function close() {
-    closing ??= new Promise((resolveClose, reject) => {
-      server.close((error) => {
-        database.close();
-        if (error) reject(error);
-        else resolveClose();
-      });
-    });
+    closing ??= (async () => {
+      try {
+        await new Promise((resolveClose, reject) => server.close((error) => error ? reject(error) : resolveClose()));
+      } finally { await database.close(); }
+    })();
     return closing;
   }
 
@@ -65,7 +65,7 @@ async function main() {
   } catch (error) {
     const message = error instanceof ConfigurationError ? error.message
       : error.code === 'EADDRINUSE' ? 'Porta já está em uso. Verifique PORT.'
-        : 'Verifique o arquivo .env, o caminho/permissões do SQLite e a disponibilidade do endereço HTTP.';
+        : 'Verifique o arquivo .env, a conexão/permissões e migrações do banco e a disponibilidade do endereço HTTP.';
     console.error(`Falha ao iniciar a API. ${message}`);
     process.exitCode = 1;
   }

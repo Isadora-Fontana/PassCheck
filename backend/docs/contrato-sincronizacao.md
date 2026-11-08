@@ -1,5 +1,12 @@
 # Contrato de sincronização — Etapa 4
 
+Atualização da Etapa 8: existe encerramento administrativo de recibos persistidos
+CONFLITO/REJEITADA, em tabela própria imutável. Não altera os resultados deste
+POST, não cria confirmação, não muda contagens e não apaga pendências locais.
+Somente ADMINISTRADOR consulta/registra a decisão. Integração de reconhecimento
+da resolução na fila do operador permanece pendente; não inferir CONFIRMADA de
+status administrativo. Veja [contrato-administracao.md](contrato-administracao.md).
+
 Atualização da Etapa 7: POST exige Bearer JWT válido, concessão para evento/portão
 e instalação registrada/ativa do usuário autenticado. Verificação antecede
 qualquer consulta de recibo, inclusive reenvios, dentro de cada transação. Falta

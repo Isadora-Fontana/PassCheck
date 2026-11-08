@@ -137,20 +137,48 @@ export async function contarIngressosDoPortao(portaoId) {
  * Devolve o identificador deste dispositivo, criando-o na primeira vez.
  * Fica salvo no IndexedDB, então continua o mesmo ao recarregar a página.
  */
-async function obterIdDispositivo() {
+export async function verificarUsuarioOperacao(usuarioId) {
   const banco = await abrirBanco();
-  const leitura = banco.transaction('operacao').objectStore('operacao');
-  const idSalvo = await aguardar(leitura.get(CHAVE_DISPOSITIVO));
-  if (idSalvo) return idSalvo;
+  const tx = banco.transaction(['operacao', 'validacoesPendentes']);
+  const opPedido = tx.objectStore('operacao').get(CHAVE_OPERACAO);
+  const filaPedido = tx.objectStore('validacoesPendentes').getAll();
+  const [operacao, fila] = await Promise.all([aguardar(opPedido), aguardar(filaPedido)]);
+  if (fila.some((item) => !item.sincronizado && item.usuarioId !== usuarioId)
+    || (fila.some((item) => !item.sincronizado) && operacao?.usuarioId !== usuarioId)) {
+    throw new Error('Há validações pendentes de outra conta ou da demonstração. Preserve os dados e procure o responsável antes de trocar de usuário.');
+  }
+}
 
-  // randomUUID só existe em HTTPS/localhost; fora disso, usa data + número aleatório.
-  const novoId = crypto.randomUUID
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-  const escrita = banco.transaction('operacao', 'readwrite').objectStore('operacao');
-  await aguardar(escrita.put(novoId, CHAVE_DISPOSITIVO));
-  return novoId;
+// O mesmo proprietário conserva o ID. Uma troca sem pendências cria outro ID,
+// sem transferir a instalação anterior no servidor.
+export async function obterIdDispositivo(usuarioId) {
+  if (!Number.isSafeInteger(usuarioId) || usuarioId <= 0) throw new Error('Usuário inválido.');
+  const banco = await abrirBanco();
+  return new Promise((resolve, reject) => {
+    const tx = banco.transaction(['operacao', 'validacoesPendentes'], 'readwrite');
+    const store = tx.objectStore('operacao');
+    const dono = store.get('dispositivoUsuario');
+    const dispositivo = store.get(CHAVE_DISPOSITIVO);
+    const fila = tx.objectStore('validacoesPendentes').getAll();
+    let resultado;
+    let erro;
+    fila.onsuccess = () => {
+      try {
+        if (fila.result.some((item) => !item.sincronizado && item.usuarioId !== usuarioId)) {
+          throw new Error('Não é permitido trocar a instalação com validações pendentes.');
+        }
+        if (dono.result === usuarioId && dispositivo.result) resultado = dispositivo.result;
+        else {
+          if (!globalThis.crypto?.randomUUID) throw new Error('Use HTTPS ou localhost para preparar o dispositivo.');
+          resultado = crypto.randomUUID();
+          store.put(resultado, CHAVE_DISPOSITIVO);
+          store.put(usuarioId, 'dispositivoUsuario');
+        }
+      } catch (falha) { erro = falha; tx.abort(); }
+    };
+    tx.oncomplete = () => resolve(resultado);
+    tx.onabort = () => reject(erro || tx.error || new Error('Instalação não registrada.'));
+  });
 }
 
 /**
@@ -185,57 +213,38 @@ function classificarIngresso(ingresso, operacao) {
  * @returns {Promise<'VALIDO'|'JA_UTILIZADO'|'INVALIDO'|'PORTAO_INCORRETO'>}
  */
 export async function validarIngresso(codigo, operacao) {
-  const dispositivo = await obterIdDispositivo();
-  try {
-    return await registrarValidacao(codigo, operacao, dispositivo);
-  } catch (erro) {
-    // A conexão pode ter sido perdida sem aviso (Safari do iPhone).
-    // Como a transação falhou, nada foi gravado: é seguro tentar mais uma vez.
-    bancoAberto = null;
-    return registrarValidacao(codigo, operacao, dispositivo);
-  }
-}
-
-async function registrarValidacao(codigo, operacao, dispositivo) {
   const banco = await abrirBanco();
-
   return new Promise((resolve, reject) => {
-    const transacao = banco.transaction(['ingressos', 'validacoesPendentes'], 'readwrite');
-    const estruturaIngressos = transacao.objectStore('ingressos');
-    let status = null;
-    let erroGravacao = null;
-
-    const busca = estruturaIngressos.index('codigo').get(codigo);
-    busca.onsuccess = () => {
-      const ingresso = busca.result || null;
-      status = classificarIngresso(ingresso, operacao);
-
-      // Inválido, portão incorreto ou já utilizado: nada é gravado.
-      if (status !== 'VALIDO') return;
-
-      try {
-        estruturaIngressos.put({ ...ingresso, utilizado: true });
-        transacao.objectStore('validacoesPendentes').add({
-          ingressoId: ingresso.id,
-          codigo: ingresso.codigo,
-          portaoId: ingresso.portaoId,
-          eventoId: ingresso.eventoId,
-          dataHora: new Date().toISOString(),
-          dispositivo,
-          sincronizado: false,
-        });
-      } catch (erro) {
-        // Se uma das gravações falhar, cancela tudo: o ingresso não fica marcado.
-        erroGravacao = erro;
-        transacao.abort();
+    const tx = banco.transaction(['ingressos', 'operacao', 'validacoesPendentes'], 'readwrite');
+    const ingressos = tx.objectStore('ingressos');
+    const atual = tx.objectStore('operacao').get(CHAVE_OPERACAO);
+    let status;
+    let erro;
+    atual.onsuccess = () => {
+      const preparada = atual.result;
+      if (!preparada?.usuarioId || !preparada.dispositivo
+        || preparada.usuarioId !== operacao.usuarioId || preparada.dispositivo !== operacao.dispositivo
+        || preparada.eventoId !== operacao.eventoId || preparada.portaoId !== operacao.portaoId) {
+        erro = new Error('A operação mudou. Abra novamente o scanner.');
+        tx.abort();
+        return;
       }
+      const busca = ingressos.index('codigo').get(codigo);
+      busca.onsuccess = () => {
+        const ingresso = busca.result;
+        status = classificarIngresso(ingresso, preparada);
+        if (status !== 'VALIDO') return;
+        ingressos.put({ ...ingresso, utilizado: true });
+        tx.objectStore('validacoesPendentes').add({
+          ingressoId: ingresso.id, codigo: ingresso.codigo,
+          portaoId: ingresso.portaoId, eventoId: ingresso.eventoId,
+          dataHora: new Date().toISOString(), dispositivo: preparada.dispositivo,
+          usuarioId: preparada.usuarioId, sincronizado: false,
+        });
+      };
     };
-
-    // Só devolve o resultado depois que tudo foi gravado.
-    transacao.oncomplete = () => resolve(status);
-    // Qualquer falha cancela a transação inteira (nada é gravado).
-    transacao.onabort = () =>
-      reject(erroGravacao || transacao.error || new Error('Gravação cancelada.'));
+    tx.oncomplete = () => resolve(status);
+    tx.onabort = () => reject(erro || tx.error || new Error('Gravação cancelada.'));
   });
 }
 
@@ -248,89 +257,59 @@ export async function contarValidacoesPendentes() {
 }
 
 /**
- * Salva no dispositivo os ingressos do evento escolhido (de todos os portões)
- * e registra o portão em que este dispositivo vai operar.
- *
- * Regras de segurança:
- * - Sem a opção descartarOperacaoAnterior, as validações pendentes nunca são apagadas
- *   e a troca de evento/portão é recusada se houver pendências do portão anterior.
- * - Com descartarOperacaoAnterior (somente após o operador confirmar a troca na tela),
- *   os dados locais da operação anterior são descartados: ingressos, utilizações locais
- *   e validações pendentes. Decisão do MVP; entradas não sincronizadas se perdem.
- * - Ao preparar novamente o mesmo evento sem descartar, ingressos já marcados como
- *   utilizados neste dispositivo continuam utilizados, mesmo que a API ainda diga o contrário.
- * - O identificador do dispositivo é sempre preservado.
- *
- * Tudo é gravado em uma única transação: ou salva tudo, ou nada.
- *
- * @param {{ descartarOperacaoAnterior?: boolean }} [opcoes]
- * @returns {Promise<number>} quantidade de ingressos armazenados
+ * Substitui o download em uma única transação com operação e fila.
+ * Pendências bloqueiam troca de conta, instalação, evento ou portão.
+ * Dados legados sem proprietário nunca são adotados com pendências.
+ * Os object stores da versão 1 são preservados; apenas novos campos são escritos.
  */
-export async function salvarPreparacao(
-  evento,
-  portao,
-  ingressosRecebidos,
-  { descartarOperacaoAnterior = false } = {}
-) {
+export async function salvarPreparacao(evento, portao, ingressosRecebidos,
+  { usuarioId, dispositivo, confirmarIdentidade = () => true } = {}) {
+  if (!Number.isSafeInteger(usuarioId) || usuarioId <= 0 || !dispositivo
+    || !Array.isArray(ingressosRecebidos) || portao.eventoId !== evento.id
+    || ingressosRecebidos.some((item) => item.eventoId !== evento.id)
+    || new Set(ingressosRecebidos.map((item) => item.id)).size !== ingressosRecebidos.length
+    || new Set(ingressosRecebidos.map((item) => item.codigo)).size !== ingressosRecebidos.length) {
+    throw new Error('Preparação inválida. Nenhum dado foi substituído.');
+  }
   const banco = await abrirBanco();
-  const operacaoAtual = await obterOperacao();
-
-  const mesmoPortao =
-    operacaoAtual !== null &&
-    operacaoAtual.eventoId === evento.id &&
-    operacaoAtual.portaoId === portao.id;
-
-  const trocaDeOperacao = operacaoAtual !== null && !mesmoPortao;
-  // Só descarta dados quando é de fato uma troca E o operador confirmou.
-  const descartar = trocaDeOperacao && descartarOperacaoAnterior;
-
-  if (trocaDeOperacao && !descartar && (await contarValidacoesPendentes()) > 0) {
-    throw new Error('Existem validações pendentes de sincronização no portão atual.');
-  }
-
-  const mesmoEvento = operacaoAtual !== null && operacaoAtual.eventoId === evento.id;
-
-  // Ids dos ingressos que este dispositivo já marcou como utilizados.
-  const idsUtilizados = new Set();
-  if (mesmoEvento && !descartar) {
-    const ingressosLocais = await lerTodos('ingressos');
-    ingressosLocais
-      .filter((ingresso) => ingresso.utilizado)
-      .forEach((ingresso) => idsUtilizados.add(ingresso.id));
-  }
-
   return new Promise((resolve, reject) => {
-    const transacao = banco.transaction(['ingressos', 'operacao', 'validacoesPendentes'], 'readwrite');
-    const estruturaIngressos = transacao.objectStore('ingressos');
-
-    // Troca confirmada: descarta as validações pendentes da operação anterior.
-    if (descartar) {
-      transacao.objectStore('validacoesPendentes').clear();
-    }
-
-    // Remove os ingressos antigos e grava a lista nova do evento.
-    estruturaIngressos.clear();
-    ingressosRecebidos.forEach((ingresso) => {
-      estruturaIngressos.put({
-        ...ingresso,
-        utilizado: ingresso.utilizado || idsUtilizados.has(ingresso.id),
-      });
-    });
-
-    transacao.objectStore('operacao').put(
-      {
-        eventoId: evento.id,
-        eventoNome: evento.nome,
-        portaoId: portao.id,
-        portaoNome: portao.nome,
-        // Os ingressos acabaram de ser recebidos do servidor.
-        ultimaSincronizacao: new Date().toISOString(),
-      },
-      CHAVE_OPERACAO
-    );
-
-    transacao.oncomplete = () => resolve(ingressosRecebidos.length);
-    transacao.onerror = () => reject(transacao.error);
-    transacao.onabort = () => reject(transacao.error);
+    const tx = banco.transaction(['ingressos', 'operacao', 'validacoesPendentes'], 'readwrite');
+    const operacoes = tx.objectStore('operacao');
+    const ingressos = tx.objectStore('ingressos');
+    const atual = operacoes.get(CHAVE_OPERACAO);
+    const dono = operacoes.get('dispositivoUsuario');
+    const idDispositivo = operacoes.get(CHAVE_DISPOSITIVO);
+    const antigos = ingressos.getAll();
+    const fila = tx.objectStore('validacoesPendentes').getAll();
+    let erro;
+    fila.onsuccess = () => {
+      try {
+        const op = atual.result;
+        const mesmoContexto = op?.usuarioId === usuarioId && op.dispositivo === dispositivo
+          && op.eventoId === evento.id && op.portaoId === portao.id;
+        const pendentes = fila.result.filter((item) => !item.sincronizado);
+        if (!confirmarIdentidade() || dono.result !== usuarioId || idDispositivo.result !== dispositivo) {
+          throw new Error('A conta ou a instalação mudou durante a preparação. Entre novamente.');
+        }
+        if (pendentes.length && (!mesmoContexto || pendentes.some((item) => item.usuarioId !== usuarioId
+          || item.dispositivo !== dispositivo || item.eventoId !== evento.id || item.portaoId !== portao.id))) {
+          throw new Error('Existem validações pendentes. A troca de operação está bloqueada; nenhum dado foi apagado.');
+        }
+        const preservar = op?.usuarioId === usuarioId && op.dispositivo === dispositivo && op.eventoId === evento.id;
+        const utilizados = new Set(preservar ? antigos.result.filter((item) => item.utilizado).map((item) => item.id) : []);
+        if (pendentes.some((item) => !ingressosRecebidos.some((ingresso) => ingresso.id === item.ingressoId && ingresso.codigo === item.codigo))) {
+          throw new Error('O download não contém todos os ingressos pendentes. Dados locais preservados.');
+        }
+        ingressos.clear();
+        for (const item of ingressosRecebidos) ingressos.put({ ...item, utilizado: item.utilizado || utilizados.has(item.id) });
+        operacoes.put({
+          eventoId: evento.id, eventoNome: evento.nome, portaoId: portao.id, portaoNome: portao.nome,
+          usuarioId, dispositivo, preparadoEm: new Date().toISOString(),
+          ultimaSincronizacao: mesmoContexto ? op.ultimaSincronizacao : null,
+        }, CHAVE_OPERACAO);
+      } catch (falha) { erro = falha; tx.abort(); }
+    };
+    tx.oncomplete = () => resolve(ingressosRecebidos.length);
+    tx.onabort = () => reject(erro || tx.error || new Error('Preparação cancelada.'));
   });
 }

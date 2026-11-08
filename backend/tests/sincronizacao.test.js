@@ -178,14 +178,15 @@ test('T14: falha no segundo item preserva primeiro commit e permite reenvio segu
   assertIntegrity(database);
 });
 
-test('T15: rollback após recibo, após trigger e antes de commit não deixa gravação parcial', (t) => {
+test('T15: rollback após recibo, após trigger e antes de commit não deixa gravação parcial', async (t) => {
   const database = memoryDatabase(t);
   const before = snapshot(database);
   const body = batch([{ ...item(), dataHora: '2026-11-20T22:03:27.000Z' }]);
   for (const stage of ['recibo', 'validacao', 'commit']) {
     const repository = createSincronizacaoRepository(database);
     if (stage === 'commit') {
-      repository.transacao = (callback) => database.transaction(() => { callback(); throw new Error('Falha antes de commit'); }).immediate();
+      const transact = repository.transacao;
+      repository.transacao = (callback) => transact(async () => { await callback(); throw new Error('Falha antes de commit'); });
     } else {
       const method = stage === 'recibo' ? 'inserirRecibo' : 'inserirValidacao';
       const original = repository[method];
@@ -195,7 +196,7 @@ test('T15: rollback após recibo, após trigger e antes de commit não deixa gra
         throw new Error('Falha controlada');
       };
     }
-    assert.throws(() => createSincronizacaoService(repository, fixtureIdentity(database)).sincronizar(body, randomUUID(), principal), /Falha/);
+    await assert.rejects(() => createSincronizacaoService(repository, fixtureIdentity(database)).sincronizar(body, randomUUID(), principal), /Falha/);
     assert.deepEqual(snapshot(database), before);
     assert.equal(database.inTransaction, false);
     assertIntegrity(database);
@@ -266,7 +267,7 @@ test('T21/T22: HTTP 400/415/500 e CORS preservam dados e ocultam detalhes', asyn
   await request(app).post('/sincronizacao').set('Content-Type', 'application/json').set('Content-Encoding', 'unknown').send('{}').expect(415);
   await request(app).options('/sincronizacao').set('Origin', 'http://localhost:5173')
     .set('Access-Control-Request-Method', 'POST').set('Access-Control-Request-Headers', 'Content-Type')
-    .expect(204).expect('Access-Control-Allow-Methods', 'GET,POST').expect('Access-Control-Allow-Origin', 'http://localhost:5173');
+    .expect(204).expect('Access-Control-Allow-Methods', 'GET,POST,PATCH').expect('Access-Control-Allow-Origin', 'http://localhost:5173');
   await request(app).options('/sincronizacao').set('Origin', 'https://evil.example').set('Access-Control-Request-Method', 'POST').expect(403);
   await request(app).post('/sincronizacao').set('Origin', 'https://evil.example').send(batch()).expect(403);
   await request(app).post('/api/sincronizacao').send(batch()).expect(404);
@@ -335,7 +336,7 @@ test('migração 003 preserva integralmente modelo 001/002 e dados preexistentes
   database.exec("INSERT INTO eventos VALUES (1, 'Teste', '2026-11-20', 'Campus')");
   const before = snapshot(database);
   const history = database.prepare('SELECT * FROM schema_migrations ORDER BY version').all();
-  assert.deepEqual(migrate(database), { applied: ['003_auditoria_divergencias.sql', '004_identidade_acesso.sql'], currentVersion: 4 });
+  assert.deepEqual(migrate(database), { applied: ['003_auditoria_divergencias.sql', '004_identidade_acesso.sql', '005_resolucoes_administrativas.sql'], currentVersion: 5 });
   assert.deepEqual(snapshot(database), before);
   assert.deepEqual(database.prepare('SELECT * FROM schema_migrations WHERE version<3 ORDER BY version').all(), history);
   assert.deepEqual(audit(database), []);

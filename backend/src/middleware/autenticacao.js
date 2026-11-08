@@ -1,4 +1,5 @@
 import { HttpError } from './errors.js';
+import { createLoginLimit } from '../services/login-limit.js';
 
 export function autenticar(service) {
   return async (request, _response, next) => {
@@ -7,20 +8,20 @@ export function autenticar(service) {
   };
 }
 
-export function limitarLogin() {
-  const tentativas = new Map();
-  return (request, _response, next) => {
-    const now = Date.now();
-    for (const [ip, entry] of tentativas) if (entry.ate <= now) tentativas.delete(ip);
-    const ip = request.ip;
-    const entry = tentativas.get(ip) ?? { total: 0, ate: now + 900000 };
-    if (entry.total >= 10 || (!tentativas.has(ip) && tentativas.size >= 1000)) {
+export function limitarLogin({ database, secret, getIp = (request) => request.ip }) {
+  const consume = createLoginLimit(database, secret);
+  return async (request, _response, next) => {
+    let result;
+    try { result = await consume(getIp(request)); }
+    catch {
+      // Sem fallback em memória: falha no contador compartilhado não libera login.
+      throw new HttpError(503, 'BANCO_INDISPONIVEL', 'Servidor temporariamente indisponível.');
+    }
+    if (!result.allowed) {
       const error = new HttpError(429, 'LIMITE_DE_TENTATIVAS', 'Tente novamente mais tarde.');
-      error.retryAfter = entry.total >= 10 ? Math.ceil((entry.ate - now) / 1000) : 1;
+      error.retryAfter = result.retryAfter;
       throw error;
     }
-    entry.total++;
-    tentativas.set(ip, entry);
     next();
   };
 }

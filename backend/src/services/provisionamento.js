@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { credenciaisSchema } from '../validation/identidade.js';
 import { hashSenha } from './senhas.js';
-import { assertMigrationsCurrent } from '../db/migrate.js';
+import { assertCurrentMigrations } from '../db/runtime.js';
+import { createProvisionamentoRepository } from '../repositories/provisionamento.js';
 
 const id = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const operadorSchema = credenciaisSchema.extend({
@@ -12,25 +13,23 @@ const operadorSchema = credenciaisSchema.extend({
 
 export async function provisionar(database, comando, body) {
   if (!['bootstrap', 'criar-operador'].includes(comando)) throw new Error('Comando inválido.');
-  assertMigrationsCurrent(database);
+  await assertCurrentMigrations(database);
   const dados = (comando === 'bootstrap' ? credenciaisSchema : operadorSchema).parse(body);
   const hash = await hashSenha(dados.senha);
-  return database.transaction(() => {
-    const admin = database.prepare("SELECT 1 FROM usuarios WHERE papel = 'ADMINISTRADOR' LIMIT 1").get();
+  const repository = createProvisionamentoRepository(database);
+  return repository.transacao(async () => {
+    const admin = await repository.adminExiste();
     if ((comando === 'bootstrap' && admin) || (comando === 'criar-operador' && !admin)) {
       throw new Error('Estado administrativo incompatível com o comando.');
     }
     const papel = comando === 'bootstrap' ? 'ADMINISTRADOR' : 'OPERADOR';
-    const result = database.prepare('INSERT INTO usuarios (usuario, senha_hash, papel) VALUES (?, ?, ?)')
-      .run(dados.usuario, hash, papel);
+    const userId = await repository.inserirUsuario(dados.usuario, hash, papel);
     for (const evento of dados.eventos ?? []) {
-      database.prepare('INSERT INTO usuarios_eventos (usuario_id, evento_id) VALUES (?, ?)')
-        .run(result.lastInsertRowid, evento.eventoId);
+      await repository.concederEvento(userId, evento.eventoId);
       for (const portao of evento.portoes) {
-        database.prepare('INSERT INTO usuarios_portoes (usuario_id, evento_id, portao_id) VALUES (?, ?, ?)')
-          .run(result.lastInsertRowid, evento.eventoId, portao);
+        await repository.concederPortao(userId, evento.eventoId, portao);
       }
     }
-    return { id: result.lastInsertRowid, usuario: dados.usuario, papel };
-  }).immediate();
+    return { id: userId, usuario: dados.usuario, papel };
+  });
 }
