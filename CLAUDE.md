@@ -43,6 +43,7 @@ Utilizar:
 - IndexedDB
 - PWA e Service Worker
 - Biblioteca gratuita para leitura de QR Code (`html5-qrcode@2.3.8`, versão fixa)
+- Biblioteca gratuita para gerar QR Code (`qrcode@1.5.4`, versão fixa), usada na gestão de ingressos
 
 Evitar frameworks como React, Vue ou Angular.
 
@@ -91,12 +92,16 @@ O sistema terá dois perfis: **GESTOR** e **OPERADOR**.
 - Somente pode acessar o evento e o portão autorizados pelo gestor.
 - Opera o scanner no portão autorizado.
 
-### Situação atual
+### Situação atual (12/11/2026)
 
-- As novas interfaces de gestor e operador serão desenvolvidas inicialmente **com mocks**.
-- A autenticação real e a integração com o back-end ainda são etapas pendentes no front-end. Hoje o login é apenas visual.
-- O papel GESTOR é **novo e ainda não existe no back-end**. O back-end atual possui os papéis ADMINISTRADOR (acesso global) e OPERADOR, com concessões por evento/portão provisionadas por linha de comando (ver `backend/docs/contrato-autenticacao.md`). Não há endpoints para criar eventos, gerar o código do evento, solicitar acesso ou aprovar/rejeitar solicitações.
-- O papel GESTOR, o código do evento e os endpoints de solicitação/aprovação/alteração de portão serão definidos e implementados posteriormente pelo Gabriel. No front-end, os mocks dessas telas não devem ser tratados como contrato da API.
+- **Login real** com JWT (`/auth/login`, `/auth/me`). O token fica só na memória da aba: depois de recarregar ou fechar o app é preciso entrar de novo (a operação preparada e a fila continuam no aparelho).
+- O back-end tem os papéis **ADMINISTRADOR** (acesso global) e **OPERADOR** (concessões por evento/portão, criadas por linha de comando com `npm run operador` ou pela aprovação do gestor no app, ver D11 abaixo). Contas são criadas só por linha de comando (`npm run admin`, `npm run operador`); não há cadastro pelo app.
+- O papel **GESTOR ainda não existe no back-end**. **Solução provisória:** o ADMINISTRADOR (`acessoGlobal`) faz o papel de gestor. Quando o GESTOR existir, as telas devem passar a respeitar o escopo dele.
+- **Painel do gestor** (`#/gestor`, botão em "Meus eventos"): ações **exclusivas do gestor**, com a API real: criar evento (portões e quantidade de ingressos por portão), ver o código do evento, aprovar/rejeitar operadores atribuindo um portão, alterar o portão e gerar ingressos com QR Code.
+- **Em "Meus eventos", o gestor também pode operar**: escolhe o evento, qualquer portão, baixa os ingressos e usa o scanner como um operador.
+- **Aprovação real (D11, autorizada pelo Gabriel em 12/11/2026):** "Aprovar" e "Alterar portão" chamam `POST /eventos/:eventoId/operadores` `{ usuarioId, portaoId }`, que grava a concessão (evento + um portão; outro portão substitui o anterior). Só depois da confirmação do servidor a solicitação muda de situação. Na Vercel depende das permissões do bloco D11 de `deploy/postgres-runtime-grants.sql` no Supabase.
+- **Código do evento e solicitações ainda são demonstração**: ficam no `localStorage` do navegador (`frontend/src/acessoEvento.js`), ligados aos eventos reais pelo id; gestor e operador precisam usar o mesmo navegador. O formato **não é contrato da API**. O operador vê em "Meus eventos" o campo "Vincular-se a um novo evento", suas solicitações e os "Eventos liberados para operar".
+- As telas antigas de **demonstração** do fluxo do gestor/operador continuam no código (`screens/gestor-*.js`, `screens/operador.js`, `src/demo/`), **fora das rotas**, com dados no `localStorage`. Servem só de referência visual; o formato desses dados **não é contrato da API**.
 
 ---
 
@@ -117,7 +122,7 @@ O sistema terá dois perfis: **GESTOR** e **OPERADOR**.
 13. Quando a conexão retorna, as validações pendentes são enviadas à API.
 14. O servidor confirma a sincronização.
 
-Hoje, enquanto perfis e autenticação não existem no front, os passos 1 a 3 são feitos escolhendo evento e portão nas telas de seleção (dados mockados).
+Hoje os passos 1 a 3 são: login real → o operador informa o código em "Meus eventos" (solicitação no navegador) → o gestor aprova com portão (concessão real no servidor) → o evento aparece em "Eventos liberados para operar" → o operador escolhe o portão autorizado. Os passos 13 e 14 estão implementados (ver "Sincronização").
 
 ---
 
@@ -141,11 +146,16 @@ Um ingresso apresentado no portão incorreto deve ser recusado.
 
 ### Troca de evento ou portão
 
-- A troca de evento ou portão é **permitida mediante aviso e confirmação** do operador.
-- No MVP, a troca pode **descartar os dados locais da operação anterior** (ingressos, operação e validações pendentes).
-- Se houver validações pendentes, o aviso deve mostrar de forma destacada a **quantidade de validações pendentes** que serão descartadas. Entradas descartadas antes de sincronizar se perdem e não podem ser recuperadas pelo servidor.
-- **Situação atual do código:** `salvarPreparacao` (`frontend/src/db.js`) e a tela de preparação ainda **bloqueiam** a troca enquanto houver pendências. A adaptação para a nova regra é uma etapa futura.
-- O contrato do back-end (`backend/docs/contrato-autenticacao.md`) recomenda bloquear a troca com pendências e não limpar o IndexedDB. Essa divergência precisa ser alinhada com o Gabriel antes da implementação.
+**Comportamento atual do código** (`salvarPreparacao` em `frontend/src/db.js` e tela de preparação):
+
+- A troca de evento, portão, conta ou instalação é **bloqueada enquanto houver validações aguardando envio** ao servidor. Nenhum dado é apagado.
+- Validações já respondidas pelo servidor como **CONFLITO** ou **REJEITADA** ficam guardadas no aparelho para revisão e **não bloqueiam** a troca (decisão da Isadora em 12/11/2026).
+- Ao preparar de novo o mesmo evento, ingressos utilizados localmente continuam utilizados.
+
+**A alinhar com o Gabriel:**
+
+- Em 24/10/2026 foi decidido permitir a troca com aviso e confirmação, descartando os dados locais (inclusive pendências). Essa regra **não está implementada**: o código atual segue o contrato do back-end, que pede bloquear.
+- O contrato (`backend/docs/contrato-sincronizacao.md`, seção 9, item 6) pede bloquear também com CONFLITO/REJEITADA; o front não bloqueia nesses casos (decisão acima).
 
 ---
 
@@ -212,9 +222,10 @@ Registro da operação na chave `'atual'`:
 - eventoNome
 - portaoId
 - portaoNome
-- ultimaSincronizacao
+- ultimaSincronizacao (horário da última resposta do servidor ao envio da fila)
+- usuarioId, dispositivo e preparadoEm
 
-A mesma store guarda o identificador do dispositivo na chave `'dispositivo'`.
+A mesma store guarda o identificador do dispositivo (UUID) na chave `'dispositivo'` e o usuário dono dessa instalação na chave `'dispositivoUsuario'`.
 
 ### validacoesPendentes
 
@@ -226,7 +237,11 @@ Chave `id` autoincremental.
 - portaoId
 - dataHora
 - dispositivo
+- usuarioId
 - sincronizado
+- statusEnvio, motivo, validacaoId, respondidoEm (resultado do envio ao servidor)
+
+Situação de cada registro: sem `statusEnvio` = aguardando envio; `CONFIRMADA` = aceito pelo servidor (`sincronizado: true`); `CONFLITO`/`REJEITADA` = recusado pelo servidor, guardado para revisão, não é reenviado. Os campos novos ficam dentro dos registros; a estrutura do banco continua na versão 1.
 
 ---
 
@@ -260,7 +275,7 @@ Obtém informações para o dashboard.
 
 Não alterar endpoints ou formatos do contrato da API sem solicitar confirmação.
 
-Enquanto o back-end não estiver integrado, utilizar mocks que respeitem o mesmo formato da API.
+Quando uma funcionalidade nova ainda não tiver endpoint, usar mocks que respeitem o mesmo formato da API e deixar claro que não são contrato.
 
 ### Documentação do back-end
 
@@ -273,26 +288,37 @@ Os contratos detalhados estão em `backend/docs/` e são mantidos pelo Gabriel. 
 
 Segundo `api-leitura.md` e `decisoes.md` (D05), os GETs seguem o mesmo formato dos mocks atuais do front (arrays diretos, IDs numéricos, campos camelCase, datas sem horário e `utilizado` booleano). Assim, o formato das respostas e o download de todos os portões do evento, antes pendentes de confirmação, estão definidos pelo back-end.
 
-Segundo essa documentação, o back-end já implementa os GETs, o `POST /sincronizacao`, o resumo e a autenticação com JWT. O front-end ainda não está integrado a nenhum deles.
+- `contrato-administracao.md`: criar/editar evento, criar portão, importar ingressos por CSV, listar/resolver pendências (somente ADMINISTRADOR).
+
+### Endpoints usados pelo front hoje
+
+O front chama a API em `/api` (mesma origem na hospedagem; no desenvolvimento, o Vite faz proxy para `http://127.0.0.1:3000`). Todo acesso passa por `frontend/src/api.js` e `frontend/src/http.js`.
+
+- Autenticação: `POST /auth/login`, `GET /auth/me`, `POST /auth/logout`, `POST /auth/instalacoes`.
+- Leitura: `GET /eventos`, `GET /eventos/:id/portoes`, `GET /eventos/:id/portoes/:portaoId/ingressos`.
+- Sincronização: `POST /sincronizacao`.
+- Gestão (ADMINISTRADOR): `POST /eventos`, `POST /eventos/:id/portoes`, `POST /eventos/:id/ingressos/importar` (CSV) e `POST /eventos/:id/operadores` (concessão de operador, D11).
+
+Existem no back-end, mas **ainda não são usados** pelo front: `GET /eventos/:id/resumo`, `PATCH /eventos/:id`, `GET /eventos/:id/pendencias` e `POST /pendencias/:id/resolver`.
+
+Os mocks (`frontend/src/mocks/`) não são mais usados pelo app; ficam como referência e pelas telas de demonstração.
 
 ---
 
 ## Telas do MVP
 
-Existentes:
+Rotas do app (`frontend/src/router.js`):
 
-1. Login (apenas visual)
-2. Eventos
-3. Seleção de evento/portão
-4. Preparação do dispositivo
-5. Operação / Scanner
-6. Resultado da validação (sobreposição)
-7. Dashboard (somente com "—")
+1. `#/login`: login real (o botão "Cadastrar" é apenas visual, sem ação).
+2. `#/eventos`: "Meus eventos" (eventos para operar; o operador também pede acesso por código e vê suas solicitações; o gestor tem o botão "Painel do gestor").
+3. `#/portoes`: portões que a conta pode operar.
+4. `#/preparacao`: preparação do dispositivo (baixa os ingressos de todos os portões).
+5. `#/scanner`: operação/scanner (ONLINE/OFFLINE, pendentes, última sincronização, "Sincronizar agora").
+6. Resultado da validação: sobreposição em tela cheia.
+7. `#/dashboard`: situação da fila do aparelho (aguardando envio, confirmadas, conflitos, rejeitadas).
+8. `#/gestor`, `#/gestor/novo-evento`, `#/gestor/evento`: Painel do gestor: eventos, código, solicitações, portões e ingressos com QR Code (ADMINISTRADOR).
 
-Planejadas, inicialmente com mocks:
-
-- Gestor: criar evento, cadastrar portões, ver o código do evento, solicitações de acesso (aprovar atribuindo portão / rejeitar) e alterar o portão de um operador.
-- Operador: informar o código do evento e aguardar aprovação.
+Telas antigas de demonstração fora das rotas: gestor (painel, criar evento com código, solicitações, alterar portão) e operador ("Meus eventos" com solicitações), em `screens/gestor-*.js` e `screens/operador.js`.
 
 A tela de operação/scanner é a principal tela do sistema.
 
@@ -334,8 +360,9 @@ Seguir esta ordem:
 Próximas etapas planejadas:
 
 12. Interfaces de gestor e operador (código do evento, solicitação e aprovação de acesso, atribuição de portão) com mocks.
-13. Nova regra de troca de evento/portão com aviso e confirmação (após alinhar com o Gabriel).
-14. Autenticação real e integração dos perfis com o back-end (depende dos endpoints a serem criados pelo Gabriel).
+13. Regra de troca de evento/portão (alinhar com o Gabriel).
+14. Integração do fluxo do gestor com o back-end (depende do papel GESTOR e dos endpoints a serem criados pelo Gabriel).
+15. Gestão de eventos e ingressos com QR Code pela API real.
 
 Não tentar implementar todas as etapas simultaneamente.
 
@@ -389,65 +416,87 @@ Não fazer commit ou push sem solicitação explícita.
 
 ---
 
-## Progresso atual (atualizado em 24/10/2026)
+## Progresso atual (atualizado em 12/11/2026)
+
+Publicado em https://passcheck-mocha.vercel.app (back-end com PostgreSQL/Supabase). As alterações de 11 e 12/11/2026 (sincronização, Painel do gestor, concessão de operador D11, botão "Cadastrar") foram enviadas para a `main` (commit `9c87b26`); **falta validá-las no site publicado e aplicar as permissões D11 no Supabase**.
 
 ### Etapas
 
 | # | Etapa | Situação |
 |---|---|---|
-| 1 | Estrutura do front | Concluída. Repositório com `frontend/` e `backend/` separados. |
-| 2 | Interface e navegação | Concluída. Router por hash (`#/login`, `#/eventos`, ...). |
-| 3 | Dados mockados | Concluída. `frontend/src/mocks/eventos.js` e `frontend/src/mocks/ingressos.js`. |
-| 4 | Integração com API | **Pendente.** `frontend/src/api.js` ainda devolve os mocks; trocar o corpo das funções por `fetch`. O back-end já oferece os GETs, mas exige JWT. |
+| 1 | Estrutura do front | Concluída. |
+| 2 | Interface e navegação | Concluída. Router por hash. |
+| 3 | Dados mockados | Concluída. Hoje usados só pelas telas de demonstração. |
+| 4 | Integração com API | Implementada: login/JWT, identidade, eventos, portões, ingressos e registro da instalação. |
 | 5 | IndexedDB | Implementada. `frontend/src/db.js`. |
 | 6 | Scanner QR | Implementado. Leitura confirmada no iPhone pela equipe. |
-| 7 | Service Worker/PWA | Implementado; **verificação pendente**. Abertura offline testada apenas no Chrome (computador). Instalação como PWA e funcionamento offline completo no iPhone ainda não verificados. |
-| 8 | Validação offline | Implementada; **verificação pendente** no iPhone offline. Regras testadas com IndexedDB simulado e no Chrome. |
-| 9 | Sincronização | **Pendente no front.** O back-end já implementa `POST /sincronizacao`; o front ainda não envia as pendências. |
-| 10 | Dashboard | **Pendente.** Tela existe só com "—". |
-| 11 | Testes e acabamento | **Pendente.** |
-| 12 | Interfaces de gestor e operador | **Pendente.** |
-| 13 | Nova regra de troca de evento/portão | **Pendente.** Código atual ainda bloqueia com pendências. |
-| 14 | Autenticação real e integração dos perfis | **Pendente.** |
+| 7 | Service Worker/PWA | Implementado. Instalabilidade aprovada no site publicado em ambiente simulado (`docs/TESTE_INSTALACAO_PWA_2026-11-08.md`); **falta teste em Android/iPhone físicos**. |
+| 8 | Validação offline | Implementada; testada no Chrome com câmera simulada; **falta teste em celular real**. |
+| 9 | Sincronização | **Implementada no front.** Testada contra o back-end local com dois aparelhos simulados (confirmação, conflito, reenvio). Falta validar na Vercel. |
+| 10 | Dashboard | Parcial: mostra a fila do aparelho. O resumo central (`GET /eventos/:id/resumo`) ainda não é usado. |
+| 11 | Testes e acabamento | Em andamento. 14 testes automatizados no front (`node --test frontend/tests/`). |
+| 12 | Interfaces de gestor e operador | Concluída: Painel do gestor e "Meus eventos" do operador nas rotas reais. |
+| 13 | Regra de troca de evento/portão | Bloqueio enquanto houver itens aguardando envio; descarte com confirmação **não** implementado (a alinhar). |
+| 14 | Integração do fluxo do gestor | **Parcial.** Aprovação e troca de portão gravam a concessão no servidor (D11). Código do evento e solicitações ainda no navegador; papel GESTOR pendente no back-end. |
+| 15 | Gestão de eventos e ingressos com QR Code | **Implementada** para o ADMINISTRADOR. Horário exibido, mas não salvo. |
 
 ### Arquivos principais (`frontend/src/`)
 
-- `router.js`: rotas por hash.
-- `api.js`: único ponto de acesso à API (hoje usa mocks com atraso simulado em `buscarIngressos`).
+- `router.js`: rotas por hash; cada tela recebe `(app, { signal })`.
+- `http.js`: transporte da API (JWT, tempo limite, erros; aceita JSON ou texto como CSV).
+- `sessao.js`: login, identidade (`/auth/me`) e permissões (`podeOperar`); token só na memória.
+- `api.js`: chamadas e conferência das respostas da API.
+- `db.js`: todo acesso ao IndexedDB (validação atômica, fila, preparação, montagem dos lotes de envio).
+- `sincronizacao.js`: envio da fila ao servidor (gatilhos, um envio por vez, novas tentativas).
+- `gestao.js` e `geracaoIngressos.js`: geração de códigos, importação de ingressos e listagem para a gestão.
 - `selecao.js`: evento/portão escolhidos, no `sessionStorage`.
-- `db.js`: todo acesso ao IndexedDB.
-- `screens/`: uma tela por arquivo.
-- `components/resultado.js`: sobreposição de resultado (aceita `codigo` e `aoFechar`).
-- `service-worker.js`: modelo do SW; o `/sw.js` final é gerado no build pelo plugin em `frontend/vite.config.js`.
-- `pwa.js`: registra o Service Worker (somente em produção).
+- `acessoEvento.js`: código do evento e solicitações dos operadores (demonstração, `localStorage`).
+- `screens/`: uma tela por arquivo (as `gestao-*` são as reais; as `gestor-*` e `operador.js` são demonstração).
+- `components/resultado.js`: sobreposição de resultado.
+- `service-worker.js` e `pwa.js`: Service Worker (gerado no build pelo plugin do `vite.config.js`) e registro.
+- `demo/`: dados e perfis de demonstração (fora das rotas).
 
 ### Decisões já tomadas
 
-- **Preparação baixa os ingressos de TODOS os portões do evento** (chamando o endpoint de ingressos uma vez por portão). Os ingressos dos outros portões servem para identificar PORTÃO INCORRETO. O contrato de autenticação do back-end permite essa leitura dentro do evento autorizado.
-- **Classificação** (`classificarIngresso` em `db.js`): não encontrado → INVÁLIDO; outro evento → INVÁLIDO; mesmo evento e outro portão → PORTÃO INCORRETO; já utilizado → JÁ UTILIZADO; senão → VÁLIDO. Somente ingressos do portão autorizado podem ser validados.
-- **Validação atômica** (`validarIngresso` em `db.js`): em uma única transação, marca `utilizado: true` e cria a pendência. O resultado só é devolvido após a transação concluir; se falhar, VÁLIDO não é exibido.
-- **Identificador do dispositivo**: UUID salvo na store `operacao` com a chave `'dispositivo'` (o registro da operação usa a chave `'atual'`).
-- **Proteções atuais da preparação** (`salvarPreparacao`): nunca apaga validações pendentes; bloqueia troca de evento/portão com pendências (também na interface); ao preparar de novo o mesmo evento, ingressos utilizados localmente continuam utilizados. O bloqueio de troca será substituído pela nova regra (ver "Troca de evento ou portão").
-- **`ultimaSincronizacao`** é preenchida com a hora da preparação.
-- **Scanner**: lê só QR Code; pausa durante o resultado; ignora o mesmo código por 3 s após fechar; diferencia falha de leitura (dica abaixo da câmera) de código não cadastrado (INVÁLIDO).
-- **Service Worker**: cache-first para os arquivos do app; não faz cache de API nem de outros domínios; a versão do cache muda a cada build e o cache antigo é apagado na ativação; nunca mexe no IndexedDB.
-- **ONLINE/OFFLINE** usa `navigator.onLine` com os eventos `online`/`offline`.
+- **Preparação baixa os ingressos de TODOS os portões do evento**; só os do portão autorizado podem ser validados.
+- **Classificação** (`classificarIngresso`): não encontrado → INVÁLIDO; outro evento → INVÁLIDO; outro portão do evento → PORTÃO INCORRETO; já utilizado → JÁ UTILIZADO; senão → VÁLIDO.
+- **Validação atômica** (`validarIngresso`): uma transação confere a operação vigente, marca `utilizado: true` e cria a pendência; VÁLIDO só é exibido após a transação concluir.
+- **Identificador do dispositivo**: UUID (`crypto.randomUUID`) por usuário dono da instalação, registrado no servidor na preparação. Sem HTTPS/localhost, a preparação é recusada.
+- **Sincronização**: lotes por evento + portão + dispositivo de cada registro (até 100), `idLocal` = id local; resposta conferida item a item antes de gravar; reenvio seguro (servidor responde `JA_PROCESSADA`). Gatilhos: login, volta da internet, app visível, após cada VÁLIDO e botão "Sincronizar agora". 401 aguarda login; erros temporários tentam de novo (1, 2, 4, 8, 16, 30 s); um envio por vez entre abas (Web Locks). No iPhone, só com o app aberto.
+- **Conflitos e rejeições** ficam guardados, não são reenviados e não bloqueiam a troca.
+- **Gestão de ingressos**: o front sorteia códigos `PC-XXXXXXXX` (8 caracteres, gerador criptográfico, sem caracteres ambíguos) e importa por CSV (até 1000 por importação, tudo ou nada). Se o servidor recusar por código repetido, sorteia de novo; se a conexão cair, não repete sozinho. O QR Code contém só o código.
+- **Scanner**: lê só QR Code; pausa durante o resultado; ignora o mesmo código por 3 s; diferencia falha de leitura de código não cadastrado; mostra a situação real do envio (nunca "Envio em dia" com itens na fila).
+- **Service Worker**: cache-first para os arquivos do app; não faz cache de `/api` nem de requisições com token; versão do cache muda a cada build; nunca mexe no IndexedDB.
+- **Armazenamento persistente** é solicitado ao navegador (`navigator.storage.persist`), sem garantia de concessão.
 
 ### A definir com o back-end (Gabriel)
 
-- Papel GESTOR, código exclusivo do evento e endpoints de criação de eventos/portões, solicitação de acesso, aprovação/rejeição e alteração de portão.
-- Regra de troca de evento/portão com pendências (front: permitir descartando; contrato do back-end: bloquear).
-- Integração da autenticação na PWA (login online, `/auth/me`, registro da instalação), conforme `backend/docs/contrato-autenticacao.md`.
+Lista completa no relatório `RELATORIO_ESTADO_PASSCHECK_2026-11-11.txt`, na raiz. Principais:
+
+- Papel GESTOR (escopo por evento) × ADMINISTRADOR (global) e formato do `/auth/me`.
+- Código do evento e solicitação de acesso pelo servidor (a concessão na aprovação já existe: D11).
+- Aplicar no Supabase as permissões do bloco D11 de `deploy/postgres-runtime-grants.sql`.
+- Horário do evento (hoje o contrato aceita só a data).
+- Cadastro de usuários pelo app.
+- FUNC-001: `GET /eventos/:id/pendencias` falha na Vercel.
+- Validar a sincronização no ambiente publicado.
+- Regra de troca de operação e bloqueio por conflitos/rejeições (ver "Troca de evento ou portão").
 
 ### Como testar
 
-- Desenvolvimento: `cd frontend && npm run dev` (sem Service Worker), em `http://127.0.0.1:5173/`.
-- Offline/PWA: `cd frontend && npm run build && npm run preview` e túnel HTTPS (`cloudflared tunnel --url http://127.0.0.1:4173`). O `vite.config.js` aceita qualquer `*.trycloudflare.com`.
-- No iPhone, o app instalado na Tela de Início tem dados separados do Safari, e cada túnel novo é um endereço (origem) diferente.
+- Primeira vez (na raiz): `npm run deps`, `npm run setup` (cria `backend/.env` e o SQLite local), opcional `npm --prefix backend run db:seed` (dados de exemplo), `npm run admin` (primeiro administrador) e `npm run operador` (operador com concessões, ex.: `[{"eventoId":1,"portoes":[1]}]`).
+- Desenvolvimento: em dois terminais, `npm run dev:api` (API em `127.0.0.1:3000`) e `npm run dev:web` (app em `http://127.0.0.1:5173`, sem Service Worker).
+- Testes automatizados do front: `node --test frontend/tests/`.
+- Offline/PWA: build + preview, ou o site publicado. O `vite.config.js` atual aceita só `127.0.0.1`; para testar no celular por túnel é preciso liberar o endereço (`allowedHosts`) ou usar o site publicado (HTTPS).
+- No iPhone, o app instalado na Tela de Início tem dados separados do Safari.
+- O projeto pede Node 24; o computador da Isadora usa Node 26 (funcionou nos testes).
 
 ### Pendências conhecidas
 
-- Botões "Simular resultado (temporário)" no scanner ainda existem; o botão "Válido" não grava nada. Remover no acabamento.
-- "Última sincronização" no scanner ainda mostra "—".
-- Login é apenas visual; não há perfis de gestor/operador.
-- O identificador do dispositivo usa `Math.random` como alternativa quando `crypto.randomUUID` não está disponível; o contrato de sincronização do back-end pede gerador criptográfico e criação atômica (ver `backend/docs/contrato-sincronizacao.md`).
+- Código do evento e solicitações só no navegador (gestor e operador no mesmo navegador) até o back-end ter esses endpoints.
+- Trocar o portão de um operador com validações ainda não enviadas do portão antigo faz o servidor recusá-las (ficam no aparelho).
+- Horário do evento exibido na criação, mas não salvo ("Horário a definir" nos ingressos).
+- Botão "Cadastrar" do login sem ação.
+- Resumo central, edição de evento e tratamento de pendências ainda sem interface.
+- Criar evento + portões + ingressos são chamadas separadas: se a conexão cair no meio, o evento fica incompleto (a tela do evento permite concluir).
+- Falta testar em celulares reais e no site publicado.

@@ -363,5 +363,5 @@ conta que preparou o aparelho; as validações só são enviadas quando essa mes
 conta entrar de novo com internet. Outra conta não consegue entrar enquanto
 houver validações aguardando envio.
 
-A seção "Progresso atual" do CLAUDE.md está desatualizada (versão de 24/10:
-ainda diz que o frontend usa mocks e que a sincronização está pendente).
+O CLAUDE.md foi atualizado em 12/11/2026 com a situação descrita neste
+relatório.
