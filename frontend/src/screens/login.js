@@ -1,6 +1,7 @@
 import { sessao, obterIdentidade } from '../sessao.js';
 import { verificarUsuarioOperacao, obterOperacao } from '../db.js';
 import { irPara } from '../router.js';
+import { sincronizarAgora } from '../sincronizacao.js';
 
 export async function telaLogin(app, { signal } = {}) {
   if (obterIdentidade()) { irPara('/eventos'); return; }
@@ -18,6 +19,8 @@ export async function telaLogin(app, { signal } = {}) {
         <div id="erro-login" class="aviso" role="alert" hidden></div>
         <button class="botao" type="submit">Entrar</button>
       </form>
+      <!-- Somente visual: o cadastro ainda não existe no backend, então o botão não tem ação. -->
+      <button class="botao botao-secundario" type="button" id="cadastrar">Cadastrar</button>
       <a id="continuar-offline" class="botao botao-secundario" href="#/scanner" hidden>Continuar operação preparada</a>
       <p class="subtitulo">A operação preparada permanece neste dispositivo. Para acessar o servidor após recarregar a página, entre novamente.</p>
     </section>`;
@@ -32,6 +35,8 @@ export async function telaLogin(app, { signal } = {}) {
     try {
       await sessao.entrar(form.querySelector('#usuario').value.trim().toLowerCase(), campoSenha.value,
         { signal, verificarUsuario: verificarUsuarioOperacao });
+      // Com a conta conectada, envia o que ficou guardado no aparelho.
+      sincronizarAgora();
       if (!signal?.aborted) irPara('/eventos');
     } catch (falha) {
       if (!signal?.aborted) { erro.textContent = falha.message; erro.hidden = false; }

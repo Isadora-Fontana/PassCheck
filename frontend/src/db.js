@@ -7,13 +7,25 @@
 //                         para identificar PORTÃO INCORRETO no scanner.
 //   operacao            → evento/portão preparado (chave: 'atual') e o
 //                         identificador deste dispositivo (chave: 'dispositivo')
-//   validacoesPendentes → validações feitas no dispositivo ainda não enviadas à API
-//                         (chave: id gerado automaticamente)
+//   validacoesPendentes → validações feitas no dispositivo (chave: id gerado automaticamente).
+//                         Cada registro guarda o resultado do envio ao servidor:
+//                         - sem statusEnvio            → aguardando envio
+//                         - statusEnvio 'CONFIRMADA'   → aceita pelo servidor (sincronizado: true)
+//                         - statusEnvio 'CONFLITO' ou  → recusada pelo servidor; fica guardada para
+//                           'REJEITADA' (com motivo)     revisão, não é reenviada e não bloqueia trocas
 
 const NOME_BANCO = 'passcheck';
 const VERSAO_BANCO = 1;
 const CHAVE_OPERACAO = 'atual';
 const CHAVE_DISPOSITIVO = 'dispositivo';
+
+/**
+ * Validação que ainda precisa ser enviada ao servidor.
+ * Conflitos e rejeições já foram registrados pelo servidor: não aguardam envio.
+ */
+export function aguardaEnvio(item) {
+  return !item.sincronizado && !item.statusEnvio;
+}
 
 let bancoAberto = null;
 
@@ -143,8 +155,8 @@ export async function verificarUsuarioOperacao(usuarioId) {
   const opPedido = tx.objectStore('operacao').get(CHAVE_OPERACAO);
   const filaPedido = tx.objectStore('validacoesPendentes').getAll();
   const [operacao, fila] = await Promise.all([aguardar(opPedido), aguardar(filaPedido)]);
-  if (fila.some((item) => !item.sincronizado && item.usuarioId !== usuarioId)
-    || (fila.some((item) => !item.sincronizado) && operacao?.usuarioId !== usuarioId)) {
+  if (fila.some((item) => aguardaEnvio(item) && item.usuarioId !== usuarioId)
+    || (fila.some(aguardaEnvio) && operacao?.usuarioId !== usuarioId)) {
     throw new Error('Há validações pendentes de outra conta ou da demonstração. Preserve os dados e procure o responsável antes de trocar de usuário.');
   }
 }
@@ -164,7 +176,7 @@ export async function obterIdDispositivo(usuarioId) {
     let erro;
     fila.onsuccess = () => {
       try {
-        if (fila.result.some((item) => !item.sincronizado && item.usuarioId !== usuarioId)) {
+        if (fila.result.some((item) => aguardaEnvio(item) && item.usuarioId !== usuarioId)) {
           throw new Error('Não é permitido trocar a instalação com validações pendentes.');
         }
         if (dono.result === usuarioId && dispositivo.result) resultado = dispositivo.result;
@@ -249,11 +261,125 @@ export async function validarIngresso(codigo, operacao) {
 }
 
 /**
- * Quantidade de validações que ainda não foram sincronizadas com a API.
+ * Quantidade de validações que ainda aguardam envio ao servidor.
  */
 export async function contarValidacoesPendentes() {
   const validacoes = await lerTodos('validacoesPendentes');
-  return validacoes.filter((validacao) => !validacao.sincronizado).length;
+  return validacoes.filter(aguardaEnvio).length;
+}
+
+/**
+ * Contagem da fila por situação, para o scanner e o dashboard.
+ * @returns {Promise<{ aguardando: number, confirmadas: number, conflitos: number, rejeitadas: number }>}
+ */
+export async function resumirFila() {
+  const validacoes = await lerTodos('validacoesPendentes');
+  return {
+    aguardando: validacoes.filter(aguardaEnvio).length,
+    confirmadas: validacoes.filter((item) => item.statusEnvio === 'CONFIRMADA').length,
+    conflitos: validacoes.filter((item) => item.statusEnvio === 'CONFLITO').length,
+    rejeitadas: validacoes.filter((item) => item.statusEnvio === 'REJEITADA').length,
+  };
+}
+
+// Limite do servidor: até 100 validações por lote (o corpo fica bem abaixo de 100 KB).
+const MAXIMO_POR_LOTE = 100;
+
+/**
+ * Monta os lotes de envio com as validações deste usuário que aguardam envio.
+ * Agrupa por evento + portão + dispositivo DE CADA REGISTRO (nunca pela operação atual)
+ * e envia somente os campos do contrato. O idLocal é o id local, que nunca muda,
+ * então reenviar o mesmo registro é seguro: o servidor não conta duas vezes.
+ * Validações de outra conta ou sem identificação ficam fora (permanecem preservadas).
+ */
+export async function montarLotesParaEnvio(usuarioId) {
+  const fila = (await lerTodos('validacoesPendentes'))
+    .filter((item) => aguardaEnvio(item) && item.usuarioId === usuarioId && item.dispositivo)
+    .sort((a, b) => a.id - b.id);
+
+  const grupos = new Map();
+  for (const item of fila) {
+    const chave = item.eventoId + '|' + item.portaoId + '|' + item.dispositivo;
+    if (!grupos.has(chave)) grupos.set(chave, []);
+    grupos.get(chave).push(item);
+  }
+
+  const lotes = [];
+  for (const itens of grupos.values()) {
+    for (let inicio = 0; inicio < itens.length; inicio += MAXIMO_POR_LOTE) {
+      const parte = itens.slice(inicio, inicio + MAXIMO_POR_LOTE);
+      lotes.push({
+        eventoId: parte[0].eventoId,
+        portaoId: parte[0].portaoId,
+        dispositivo: parte[0].dispositivo,
+        validacoes: parte.map((item) => ({
+          idLocal: String(item.id), ingressoId: item.ingressoId, codigo: item.codigo, dataHora: item.dataHora,
+        })),
+      });
+    }
+  }
+  return lotes;
+}
+
+/**
+ * Grava o resultado do servidor para cada validação de um lote, em UMA transação.
+ * Antes de gravar, confere de novo cada registro: se algum mudou ou já tem resultado,
+ * nada é gravado (o lote poderá ser reenviado com segurança).
+ * - CONFIRMADA (ou reenvio de uma confirmada) → sincronizado: true + validacaoId.
+ * - CONFLITO / REJEITADA (ou reenvio deles) → continua não sincronizada, com motivo;
+ *   fica guardada para revisão e não é reenviada.
+ * @returns {Promise<{ confirmadas: number, recusadas: number }>}
+ */
+export async function aplicarResultadosEnvio(lote, resultados) {
+  const banco = await abrirBanco();
+  return new Promise((resolve, reject) => {
+    const tx = banco.transaction(['validacoesPendentes', 'operacao'], 'readwrite');
+    const fila = tx.objectStore('validacoesPendentes');
+    const agora = new Date().toISOString();
+    const contagem = { confirmadas: 0, recusadas: 0 };
+    let erro;
+    let restantes = lote.validacoes.length;
+
+    lote.validacoes.forEach((enviada, posicao) => {
+      const resultado = resultados[posicao];
+      const pedido = fila.get(Number(enviada.idLocal));
+      pedido.onsuccess = () => {
+        try {
+          const item = pedido.result;
+          if (!item || !aguardaEnvio(item) || item.ingressoId !== enviada.ingressoId
+            || item.codigo !== enviada.codigo || item.dataHora !== enviada.dataHora
+            || item.eventoId !== lote.eventoId || item.portaoId !== lote.portaoId
+            || item.dispositivo !== lote.dispositivo) {
+            throw new Error('A fila local mudou durante o envio. Nada foi marcado; o envio será repetido.');
+          }
+          const final = resultado.status === 'JA_PROCESSADA' ? resultado.resultadoOriginal : resultado.status;
+          if (final === 'CONFIRMADA') {
+            fila.put({ ...item, sincronizado: true, statusEnvio: 'CONFIRMADA',
+              validacaoId: resultado.validacaoId, respondidoEm: agora });
+            contagem.confirmadas++;
+          } else {
+            fila.put({ ...item, sincronizado: false, statusEnvio: final,
+              motivo: resultado.motivo, respondidoEm: agora });
+            contagem.recusadas++;
+          }
+          restantes--;
+          if (restantes === 0) registrarUltimaSincronizacao();
+        } catch (falha) { erro = falha; tx.abort(); }
+      };
+    });
+
+    // A última sincronização é o horário da última resposta aplicada.
+    function registrarUltimaSincronizacao() {
+      const operacoes = tx.objectStore('operacao');
+      const atual = operacoes.get(CHAVE_OPERACAO);
+      atual.onsuccess = () => {
+        if (atual.result) operacoes.put({ ...atual.result, ultimaSincronizacao: agora }, CHAVE_OPERACAO);
+      };
+    }
+
+    tx.oncomplete = () => resolve(contagem);
+    tx.onabort = () => reject(erro || tx.error || new Error('Resultado do envio não gravado.'));
+  });
 }
 
 /**
@@ -287,7 +413,9 @@ export async function salvarPreparacao(evento, portao, ingressosRecebidos,
         const op = atual.result;
         const mesmoContexto = op?.usuarioId === usuarioId && op.dispositivo === dispositivo
           && op.eventoId === evento.id && op.portaoId === portao.id;
-        const pendentes = fila.result.filter((item) => !item.sincronizado);
+        // Somente o que aguarda envio bloqueia a troca; conflitos e rejeições
+        // já estão registrados no servidor e ficam guardados para revisão.
+        const pendentes = fila.result.filter(aguardaEnvio);
         if (!confirmarIdentidade() || dono.result !== usuarioId || idDispositivo.result !== dispositivo) {
           throw new Error('A conta ou a instalação mudou durante a preparação. Entre novamente.');
         }

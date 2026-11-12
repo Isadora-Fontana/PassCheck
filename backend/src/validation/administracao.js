@@ -16,6 +16,9 @@ export const eventoSchema = z.object({
 }).strict();
 export const atualizarEventoSchema = eventoSchema.partial().refine((value) => Object.keys(value).length > 0);
 export const portaoSchema = z.object({ nome: texto(200) }).strict();
+// Concessão de evento + portão a um operador (aprovação feita pelo gestor/administrador).
+const idJson = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+export const concessaoSchema = z.object({ usuarioId: idJson, portaoId: idJson }).strict();
 export const resolucaoSchema = z.object({ justificativa: texto(1000, 10) }).strict();
 const cursor = z.string().regex(/^(0|[1-9][0-9]*)$/).transform(Number)
   .pipe(z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER));

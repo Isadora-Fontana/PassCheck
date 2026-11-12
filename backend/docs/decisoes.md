@@ -1,5 +1,25 @@
 # Decisões da fundação — 16/10/2026
 
+## D11 — Concessão de operador pela aprovação do gestor, 12/11/2026
+
+Gabriel autorizou a criação do endpoint que transforma a aprovação feita na tela
+do gestor em permissão real. Implementado pela responsável pelo frontend.
+
+- `POST /eventos/:eventoId/operadores` com `{usuarioId, portaoId}`, somente
+  ADMINISTRADOR (o papel GESTOR ainda não existe; o administrador faz esse papel).
+- Um portão por operador em cada evento: reaplicar com outro portão substitui o
+  anterior. Usa as tabelas existentes `usuarios_eventos`/`usuarios_portoes`, as
+  mesmas do provisionamento por linha de comando; nenhuma migração nova.
+- SQLite e PostgreSQL implementados. Em produção são necessários novos grants à
+  conta de runtime (`deploy/postgres-runtime-grants.sql`, bloco D11), ainda não
+  aplicados no Supabase. Nenhum deploy foi feito.
+- CORS inalterado (o endpoint usa POST). Código do evento e solicitações de
+  acesso continuam somente no frontend (modo demonstração) até haver contrato.
+
+Testes: `tests/concessao-operador.test.js` (5 testes). Suíte completa: 213 testes,
+209 aprovados, 4 ignorados (PostgreSQL sem banco disponível), 0 falhas.
+Contrato: [contrato-administracao.md](contrato-administracao.md#concessão-de-operador-d11).
+
 ## D10 — Integração inicial e preparação de hospedagem, 30/10/2026
 
 Após análise somente leitura e explicação de impacto, riscos, preservação e

@@ -55,6 +55,42 @@ Evento inexistente recebe 404. Nomes não são chaves únicas; códigos dos ingr
 continuam globalmente únicos. Não há concessão automática a operadores ao criar
 eventos/portões; aplica-se a política da Etapa 7.
 
+## Concessão de operador (D11)
+
+POST /eventos/:eventoId/operadores — somente ADMINISTRADOR ativo, mesma ordem de
+autenticação/autorização dos demais endpoints desta página. Usado pela aprovação
+do gestor no frontend: concede ao operador o evento e UM portão desse evento.
+
+```json
+{"usuarioId":4,"portaoId":2}
+```
+
+200:
+
+```json
+{"usuarioId":4,"eventoId":1,"portaoId":2}
+```
+
+- Grava `usuarios_eventos` (se ainda não existir) e deixa o operador com um único
+  portão no evento em `usuarios_portoes`: os outros portões dele nesse evento são
+  removidos e o informado é garantido. Reenviar o mesmo corpo é idempotente;
+  enviar outro portão é a "alteração de portão". Eventos diferentes são independentes.
+- Erros: evento inexistente 404 EVENTO_NAO_ENCONTRADO; usuário inexistente,
+  inativo ou que não seja OPERADOR 404 OPERADOR_NAO_ENCONTRADO; portão de outro
+  evento ou inexistente 422 PORTAO_INCOMPATIVEL; corpo fora do schema estrito
+  (IDs inteiros positivos seguros, sem campos extras) 400 DADOS_INVALIDOS.
+  Nenhum erro grava parcialmente (transação única).
+- Permissões continuam lidas do banco a cada requisição: após a concessão, o
+  operador vê o evento em GET /eventos e /auth/me, baixa os ingressos de todos os
+  portões do evento e sincroniza somente no portão concedido.
+- Alterar o portão retira a permissão de sincronizar no portão anterior: validações
+  ainda não enviadas desse portão passam a receber 403 (a fila é preservada no
+  aparelho). Recomenda-se alterar o portão com a fila do operador em dia.
+- Não há revogação de evento nem endpoint de listagem de concessões nesta versão.
+- PostgreSQL: a conta de runtime precisa de INSERT em usuarios_eventos e
+  usuarios_portoes e DELETE em usuarios_portoes (ver `deploy/postgres-runtime-grants.sql`,
+  bloco D11, ainda não aplicado no Supabase).
+
 ## Importação CSV
 
 POST /eventos/4/ingressos/importar recebe o CSV diretamente no corpo, não JSON

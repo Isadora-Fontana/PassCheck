@@ -14,7 +14,8 @@ import { salvarEvento } from '../selecao.js';
 import { obterOperacao } from '../db.js';
 import { escaparHtml, formatarData } from '../html.js';
 
-export async function telaOperador(app, mensagem = '') {
+// O router chama as telas com (app, { signal }); a mensagem vem no mesmo objeto de opções.
+export async function telaOperador(app, { mensagem = '' } = {}) {
   if (!exigirPerfil(PERFIS.OPERADOR)) return;
 
   const meusEventos = listarEventosDoOperador(OPERADOR_DEMO.id);
@@ -156,7 +157,7 @@ function mostrarFormulario(app, area) {
 
     try {
       solicitarAcesso(campo.value, OPERADOR_DEMO);
-      telaOperador(app, 'Solicitação enviada. Aguarde a aprovação do gestor.');
+      telaOperador(app, { mensagem: 'Solicitação enviada. Aguarde a aprovação do gestor.' });
     } catch (falha) {
       erro.textContent = falha.message;
       erro.hidden = false;

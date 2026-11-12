@@ -44,6 +44,27 @@ export function createAdministracaoService(repository, identidade) {
         return portao;
       });
     },
+    /**
+     * Aprovação do gestor: concede ao operador o evento e um único portão desse evento.
+     * Reaplicar com outro portão substitui o anterior (alterar portão). Idempotente.
+     * Atenção: validações ainda não enviadas do portão anterior passam a ser recusadas
+     * no envio (403); a troca deve ser feita quando a fila do operador estiver em dia.
+     */
+    concederOperador(principal, eventoId, { usuarioId, portaoId }) {
+      return executar(principal, async () => {
+        await eventoExistente(eventoId);
+        const operador = await repository.usuario(usuarioId);
+        if (!operador || !operador.ativo || operador.papel !== 'OPERADOR') {
+          throw new HttpError(404, 'OPERADOR_NAO_ENCONTRADO', 'Operador não encontrado.');
+        }
+        if (!(await repository.portaoDoEvento(portaoId, eventoId))) {
+          throw new HttpError(422, 'PORTAO_INCOMPATIVEL', 'O portão não pertence a este evento.');
+        }
+        await repository.concederEvento(usuarioId, eventoId);
+        await repository.definirPortao(usuarioId, eventoId, portaoId);
+        return { usuarioId, eventoId, portaoId };
+      });
+    },
     importar(principal, eventoId, buffer) {
       return executar(principal, async () => {
         await eventoExistente(eventoId);

@@ -16,6 +16,18 @@ export function createAdministracaoRepository(database) {
       'UPDATE eventos SET nome = ?, data = ?, local = ? WHERE id = ? RETURNING id, nome, data, local').get(nome, data, local, id),
     criarPortao: (eventoId, nome) => database.prepare(
       'INSERT INTO portoes (evento_id, nome) VALUES (?, ?) RETURNING id, evento_id AS eventoId, nome').get(eventoId, nome),
+    usuario: (id) => database.prepare('SELECT id, papel, ativo FROM usuarios WHERE id = ?').get(id),
+    portaoDoEvento: (portaoId, eventoId) => Boolean(database.prepare(
+      'SELECT 1 FROM portoes WHERE id = ? AND evento_id = ?').get(portaoId, eventoId)),
+    concederEvento: (usuarioId, eventoId) => database.prepare(
+      'INSERT OR IGNORE INTO usuarios_eventos (usuario_id, evento_id) VALUES (?, ?)').run(usuarioId, eventoId),
+    definirPortao(usuarioId, eventoId, portaoId) {
+      // Um operador opera um único portão por evento: remove os outros e garante este.
+      database.prepare('DELETE FROM usuarios_portoes WHERE usuario_id = ? AND evento_id = ? AND portao_id <> ?')
+        .run(usuarioId, eventoId, portaoId);
+      database.prepare('INSERT OR IGNORE INTO usuarios_portoes (usuario_id, evento_id, portao_id) VALUES (?, ?, ?)')
+        .run(usuarioId, eventoId, portaoId);
+    },
     prepararImportacao() {
       const codigo = database.prepare('SELECT 1 FROM ingressos WHERE codigo = ?');
       const portao = database.prepare('SELECT 1 FROM portoes WHERE id = ? AND evento_id = ?');

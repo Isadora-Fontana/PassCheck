@@ -4,12 +4,17 @@ import { telaPortoes } from './screens/portoes.js';
 import { telaPreparacao } from './screens/preparacao.js';
 import { telaScanner } from './screens/scanner.js';
 import { telaDashboard } from './screens/dashboard.js';
+import { telaGestaoPainel } from './screens/gestao-painel.js';
+import { telaGestaoNovoEvento } from './screens/gestao-novo-evento.js';
+import { telaGestaoEvento } from './screens/gestao-evento.js';
 
 // As telas demo permanecem no fonte, fora das rotas da aplicação integrada.
 const rotas = {
   '/login': telaLogin, '/eventos': telaEventos, '/portoes': telaPortoes,
   '/preparacao': telaPreparacao, '/scanner': telaScanner, '/dashboard': telaDashboard,
-  '/gestor': telaEventos, '/operador': telaEventos,
+  // Gestão de eventos e ingressos pela API real (somente ADMINISTRADOR no backend atual).
+  '/gestor': telaGestaoPainel, '/gestor/novo-evento': telaGestaoNovoEvento, '/gestor/evento': telaGestaoEvento,
+  '/operador': telaEventos,
 };
 let navegacao;
 async function mostrarTelaAtual() {

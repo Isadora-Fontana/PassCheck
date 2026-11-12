@@ -509,3 +509,78 @@
 [hidden] {
   display: none !important;
 }
+
+/* ---------- Gestão: ingressos com QR Code ---------- */
+
+.linha-portao .campo-quantidade {
+  flex: 0 0 90px;
+}
+
+.aviso-campo {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: var(--cinza-texto);
+}
+
+.grade-ingressos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.ingresso-cartao {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 12px;
+  border: 1px solid var(--cinza-borda);
+  border-radius: var(--raio);
+  background: var(--branco);
+  text-align: center;
+  font-size: 0.8rem;
+  break-inside: avoid;
+}
+
+.ingresso-qr {
+  width: 100%;
+  max-width: 160px;
+}
+
+.ingresso-qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.ingresso-codigo {
+  font-family: ui-monospace, monospace;
+  font-size: 1rem;
+  color: var(--azul);
+}
+
+/* Impressão: só os ingressos, três por linha, sem cortar um ingresso entre páginas. */
+@media print {
+  .nao-imprimir {
+    display: none !important;
+  }
+
+  body,
+  #app {
+    background: var(--branco);
+    max-width: none;
+  }
+
+  .conteudo {
+    padding: 0;
+  }
+
+  .grade-ingressos {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .ingresso-cartao {
+    page-break-inside: avoid;
+  }
+}

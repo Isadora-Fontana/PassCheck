@@ -1,13 +1,14 @@
 // Tela principal de operação (scanner).
 // Lê o QR Code pela câmera e valida o ingresso no IndexedDB, sem usar a API.
-// Um ingresso VÁLIDO é marcado como utilizado e entra na fila de validações
-// pendentes, que será enviada à API na etapa de sincronização.
+// Um ingresso VÁLIDO é marcado como utilizado e entra na fila de validações,
+// que é enviada ao servidor por src/sincronizacao.js quando há conexão e conta conectada.
 
 import { Html5Qrcode, Html5QrcodeScannerState, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { irPara } from '../router.js';
 import { mostrarResultado } from '../components/resultado.js';
 import { obterOperacao, validarIngresso, contarValidacoesPendentes } from '../db.js';
 import { obterIdentidade, podeOperar } from '../sessao.js';
+import { sincronizarAgora, aoMudarSincronizacao } from '../sincronizacao.js';
 import { escaparHtml } from '../html.js';
 
 // Depois de fechar um resultado, o mesmo código é ignorado por este tempo,
@@ -37,7 +38,8 @@ export async function telaScanner(app, { signal } = {}) {
     <div class="barra-status">
       <span class="selo-conexao" id="selo-conexao"></span>
       <span>Pendentes: <span id="pendentes">—</span></span>
-      <span>Envio ao servidor: próxima etapa</span>
+      <span>Última sincronização: <span id="ultima-sincronizacao">—</span></span>
+      <span id="situacao-envio"></span>
     </div>
 
     <section class="conteudo">
@@ -49,6 +51,7 @@ export async function telaScanner(app, { signal } = {}) {
       </div>
       <p class="dica-leitura" id="dica-leitura">${DICA_PADRAO}</p>
 
+      <button class="botao botao-secundario" type="button" id="sincronizar">Sincronizar agora</button>
       <a class="botao botao-secundario" href="#/eventos">Encerrar operação</a>
     </section>
   `;
@@ -57,6 +60,8 @@ export async function telaScanner(app, { signal } = {}) {
   const dicaLeitura = app.querySelector('#dica-leitura');
   const campoPendentes = app.querySelector('#pendentes');
   const seloConexao = app.querySelector('#selo-conexao');
+  const campoUltimaSincronizacao = app.querySelector('#ultima-sincronizacao');
+  const campoSituacaoEnvio = app.querySelector('#situacao-envio');
 
   // Lê somente QR Codes: mais rápido e evita confundir com outros tipos de código.
   const leitor = new Html5Qrcode('leitor', {
@@ -108,17 +113,58 @@ export async function telaScanner(app, { signal } = {}) {
     const online = navigator.onLine;
     seloConexao.textContent = online ? 'ONLINE' : 'OFFLINE';
     seloConexao.classList.toggle('selo-offline', !online);
+    if (campoSituacaoEnvio) mostrarSituacaoEnvio();
   }
 
+  // Último estado do envio e quantidade real de pendências: os dois juntos
+  // definem o texto da situação (nunca "Envio em dia" com validações na fila).
+  let ultimoEstadoEnvio = { situacao: 'PARADO', mensagem: '' };
+  let quantidadePendentes = 0;
+
   /**
-   * Atualiza o contador de pendências com os registros reais do IndexedDB.
+   * Atualiza o contador de pendências (validações que aguardam envio) e o horário
+   * da última sincronização, com os registros reais do IndexedDB.
    */
   async function atualizarPendentes() {
     try {
-      campoPendentes.textContent = await contarValidacoesPendentes();
+      quantidadePendentes = await contarValidacoesPendentes();
+      campoPendentes.textContent = quantidadePendentes;
+      mostrarSituacaoEnvio();
+      const atual = await obterOperacao();
+      campoUltimaSincronizacao.textContent = atual?.ultimaSincronizacao
+        ? new Date(atual.ultimaSincronizacao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+        : '—';
     } catch (erro) {
       campoPendentes.textContent = '?';
     }
+  }
+
+  /**
+   * Mostra a situação do envio ao servidor, considerando a fila real deste aparelho.
+   */
+  function mostrarSituacaoEnvio() {
+    const textos = {
+      ENVIANDO: 'Enviando...',
+      AGUARDANDO_LOGIN: 'Entre para enviar',
+      AGUARDANDO_NOVA_TENTATIVA: 'Nova tentativa em instantes',
+      ERRO: 'Falha no envio',
+    };
+    let texto = textos[ultimoEstadoEnvio.situacao];
+    if (!texto) {
+      if (quantidadePendentes === 0) texto = 'Envio em dia';
+      else texto = navigator.onLine ? 'Aguardando envio' : 'Aguardando conexão';
+    }
+    campoSituacaoEnvio.textContent = texto;
+    campoSituacaoEnvio.title = ultimoEstadoEnvio.mensagem;
+  }
+
+  /**
+   * Recebe as mudanças do envio. Depois de um envio, recarrega os contadores.
+   */
+  function aoMudarEnvio(envio) {
+    ultimoEstadoEnvio = envio;
+    mostrarSituacaoEnvio();
+    if (envio.situacao === 'ENVIADO' || envio.situacao === 'ERRO') atualizarPendentes();
   }
 
   /**
@@ -161,7 +207,11 @@ export async function telaScanner(app, { signal } = {}) {
       if (signal?.aborted) return;
       exibirResultado(status, codigo);
       if (signal?.aborted) return;
-      if (status === 'VALIDO') atualizarPendentes();
+      if (status === 'VALIDO') {
+        atualizarPendentes();
+        // Com internet, envia a nova validação logo em seguida (sem bloquear a leitura).
+        if (navigator.onLine) sincronizarAgora();
+      }
     } catch (erro) {
       // A gravação falhou: nada foi registrado e o ingresso NÃO deve ser aceito.
       mostrarDica('Não foi possível registrar a validação. Não libere a entrada; leia o QR Code novamente.', true);
@@ -222,6 +272,7 @@ export async function telaScanner(app, { signal } = {}) {
       clearTimeout(temporizadorDica);
       window.removeEventListener('online', atualizarConexao);
       window.removeEventListener('offline', atualizarConexao);
+      pararDeOuvirEnvio();
       if (leitor.isScanning) {
         leitor.stop().catch(() => {});
       }
@@ -231,6 +282,18 @@ export async function telaScanner(app, { signal } = {}) {
 
   window.addEventListener('online', atualizarConexao);
   window.addEventListener('offline', atualizarConexao);
+  const pararDeOuvirEnvio = aoMudarSincronizacao(aoMudarEnvio);
+  app.querySelector('#sincronizar').addEventListener('click', () => {
+    if (!navigator.onLine) {
+      mostrarDica('Sem internet. As validações ficam guardadas e serão enviadas quando a conexão voltar.');
+      return;
+    }
+    if (!obterIdentidade()) {
+      mostrarDica('Entre na sua conta para enviar as validações. A fila continua guardada.', true);
+      return;
+    }
+    sincronizarAgora();
+  });
   atualizarConexao();
   atualizarPendentes();
   iniciarCamera();

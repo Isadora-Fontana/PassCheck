@@ -17,8 +17,10 @@ export function criarClienteHttp({ base = '/api', origem = globalThis.location?.
     throw new Error('Configure VITE_API_URL com /api ou uma URL HTTPS da API.');
   }
   const prefixo = urlBase.pathname.replace(/\/$/, '');
-  return async function requisitar(caminho, { method = 'GET', body, autenticado = true, signal, token: tokenExplicito } = {}) {
+  // tipoConteudo: envia o corpo como texto já pronto (ex.: CSV); sem ele, o corpo é JSON.
+  return async function requisitar(caminho, { method = 'GET', body, autenticado = true, signal, token: tokenExplicito, tipoConteudo } = {}) {
     if (!/^\/[a-zA-Z0-9/_-]*$/.test(caminho) || caminho.startsWith('//')) throw new Error('Caminho de API inválido.');
+    if (tipoConteudo !== undefined && typeof body !== 'string') throw new Error('Corpo em texto inválido.');
     const token = tokenExplicito ?? (autenticado ? obterToken() : null);
     if (autenticado && !token) throw new ErroApi('Entre novamente para acessar o servidor.', { status: 401, codigo: 'SESSAO' });
     const controller = new AbortController();
@@ -29,9 +31,10 @@ export function criarClienteHttp({ base = '/api', origem = globalThis.location?.
     try {
       const response = await fetchImpl(urlBase.origin + prefixo + caminho, {
         method, signal: controller.signal, credentials: 'omit', cache: 'no-store', redirect: 'error',
-        headers: { Accept: 'application/json', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        headers: { Accept: 'application/json',
+          ...(body !== undefined ? { 'Content-Type': tipoConteudo ?? 'application/json' } : {}),
           ...(token ? { Authorization: 'Bearer ' + token } : {}) },
-        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+        ...(body !== undefined ? { body: tipoConteudo !== undefined ? body : JSON.stringify(body) } : {}),
       });
       if (response.status === 401 && autenticado) aoNaoAutenticado(token);
       let data;

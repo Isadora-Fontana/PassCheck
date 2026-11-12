@@ -53,3 +53,11 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON passcheck.login_limites TO passcheck_run
 DROP POLICY IF EXISTS login_limites_runtime ON passcheck.login_limites;
 CREATE POLICY login_limites_runtime ON passcheck.login_limites
   TO passcheck_runtime USING (true) WITH CHECK (true);
+
+-- D11 (concessão de operador pelo gestor/administrador, POST /eventos/:id/operadores).
+-- AINDA NÃO APLICADO no Supabase: aplicar como proprietário do schema, em transação,
+-- antes de publicar a versão que contém o endpoint. Sem estes grants o endpoint
+-- responde erro interno em produção (a conta de runtime só lê estas tabelas).
+-- DELETE apenas em usuarios_portoes: alterar o portão substitui a concessão anterior.
+GRANT INSERT ON TABLE passcheck.usuarios_eventos, passcheck.usuarios_portoes TO passcheck_runtime;
+GRANT DELETE ON TABLE passcheck.usuarios_portoes TO passcheck_runtime;

@@ -3,7 +3,7 @@ import { MIMEType } from 'node:util';
 import { HttpError } from '../middleware/errors.js';
 import { exigirJsonSincronizacao as exigirJson } from './sincronizacao.js';
 import { eventoParams, recebimentoParams, eventoSchema, atualizarEventoSchema,
-  portaoSchema, resolucaoSchema, pendenciasQuery } from '../validation/administracao.js';
+  portaoSchema, resolucaoSchema, pendenciasQuery, concessaoSchema } from '../validation/administracao.js';
 
 function validar(schema, value, parametro = false) {
   const result = schema.safeParse(value);
@@ -34,6 +34,10 @@ export function administracaoRoutes(service, autenticar, identidade) {
   });
   router.post('/eventos/:eventoId/portoes', ...admin, ...json, async (request, response) => {
     response.status(201).json(await service.criarPortao(request.identidade, eventoId(request), validar(portaoSchema, request.body)));
+  });
+  // Concede ao operador o evento e UM portão (substitui o portão anterior neste evento).
+  router.post('/eventos/:eventoId/operadores', ...admin, ...json, async (request, response) => {
+    response.json(await service.concederOperador(request.identidade, eventoId(request), validar(concessaoSchema, request.body)));
   });
   router.post('/eventos/:eventoId/ingressos/importar', ...admin, exigirCsv,
     express.raw({ type: () => true, limit: 102400, inflate: false }), async (request, response) => {

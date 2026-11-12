@@ -15,7 +15,8 @@ import {
 import { exigirPerfil, obterEventoGestorId, PERFIS } from '../demo/perfilDemo.js';
 import { escaparHtml, formatarData } from '../html.js';
 
-export function telaGestorEvento(app, mensagem = '') {
+// O router chama as telas com (app, { signal }); a mensagem vem no mesmo objeto de opções.
+export function telaGestorEvento(app, { mensagem = '' } = {}) {
   if (!exigirPerfil(PERFIS.GESTOR)) return;
 
   const evento = obterEvento(obterEventoGestorId());
@@ -82,7 +83,7 @@ export function telaGestorEvento(app, mensagem = '') {
   app.querySelectorAll('[data-rejeitar]').forEach((botao) => {
     botao.addEventListener('click', () => {
       rejeitarSolicitacao(Number(botao.dataset.rejeitar));
-      telaGestorEvento(app, 'Solicitação rejeitada.');
+      telaGestorEvento(app, { mensagem: 'Solicitação rejeitada.' });
     });
   });
 
@@ -113,7 +114,7 @@ function executarAcao(app, botao, acao) {
 
   try {
     const mensagem = acao(portaoId);
-    telaGestorEvento(app, mensagem);
+    telaGestorEvento(app, { mensagem });
   } catch (falha) {
     erro.textContent = falha.message;
     erro.hidden = false;

@@ -104,6 +104,16 @@ export function createPostgresAdministracaoRepository(database) {
       'UPDATE eventos SET nome=$1, data=$2, local=$3 WHERE id=$4 RETURNING id, nome, data, local', [nome, data, local, id]),
     criarPortao: (evento, nome) => db.one(
       'INSERT INTO portoes (evento_id,nome) VALUES ($1,$2) RETURNING id, evento_id AS "eventoId", nome', [evento, nome]),
+    usuario: (id) => db.one('SELECT id, papel, ativo FROM usuarios WHERE id = $1', [id]),
+    portaoDoEvento: async (portao, evento) => Boolean(await db.one('SELECT 1 FROM portoes WHERE id=$1 AND evento_id=$2', [portao, evento])),
+    concederEvento: (usuario, evento) => db.query(
+      'INSERT INTO usuarios_eventos (usuario_id, evento_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [usuario, evento]),
+    async definirPortao(usuario, evento, portao) {
+      // Um operador opera um único portão por evento: remove os outros e garante este.
+      await db.query('DELETE FROM usuarios_portoes WHERE usuario_id=$1 AND evento_id=$2 AND portao_id<>$3', [usuario, evento, portao]);
+      await db.query('INSERT INTO usuarios_portoes (usuario_id, evento_id, portao_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+        [usuario, evento, portao]);
+    },
     prepararImportacao: () => ({
       codigoExiste: async (codigo) => Boolean(await db.one('SELECT 1 FROM ingressos WHERE codigo = $1', [codigo])),
       portaoPertence: async (evento, portao) => Boolean(await db.one('SELECT 1 FROM portoes WHERE id=$1 AND evento_id=$2', [portao, evento])),

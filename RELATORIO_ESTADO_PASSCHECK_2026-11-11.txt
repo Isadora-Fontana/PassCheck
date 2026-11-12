@@ -1,0 +1,367 @@
+RELATÓRIO DE ESTADO DO PASSCHECK
+================================
+
+Criado em 11/11/2026 · Atualizado em 12/11/2026
+
+Versionado no repositório junto com as alterações de 11 e 12/11/2026.
+
+Base: código atual do repositório e relatórios da equipe em docs/ e backend/docs/
+(em especial TESTES_FUNCIONAIS_2026-11-08.md, PUBLICACAO_REALIZADA_2026-11-08.md,
+INTEGRACAO_ETAPA_1.md, TESTE_INSTALACAO_PWA_2026-11-08.md e os contratos do
+backend: contrato-autenticacao.md, contrato-sincronizacao.md e
+contrato-administracao.md).
+
+IMPORTANTE: as novidades descritas neste relatório (seção 6) foram enviadas
+para a branch main em 12/11/2026. O backend recebeu UMA alteração, autorizada
+pelo Gabriel: o endpoint de concessão de operador (seção 6.4, decisão D11).
+Antes de usar esse endpoint na Vercel é preciso aplicar as novas permissões no
+Supabase (demanda 8.12).
+
+
+ÍNDICE
+------
+ 1. O banco de dados já está integrado?
+ 2. O IndexedDB está funcionando corretamente?
+ 3. O back e o front estão completamente integrados?
+ 4. O backend está completo?
+ 5. Vários celulares offline sincronizam sozinhos ao reconectar?
+ 6. Novidades no frontend (11 e 12/11/2026)
+ 7. O que ainda falta integrar entre front e back
+ 8. DEMANDAS PARA O GABRIEL
+ 9. Testes executados
+10. Observações
+
+
+1. O BANCO DE DADOS JÁ ESTÁ INTEGRADO?
+--------------------------------------
+
+Em grande parte.
+
+O backend usa PostgreSQL (Supabase) e está publicado em:
+  https://passcheck-mocha.vercel.app
+Localmente, continua em SQLite.
+
+O frontend já usa a API real (login com JWT) para:
+- login, logout e identidade (/auth/me);
+- listar eventos e portões;
+- baixar ingressos na preparação;
+- registrar a instalação do dispositivo;
+- NOVO: enviar as validações (POST /sincronizacao);
+- NOVO: criar evento, criar portão e importar ingressos (somente ADMINISTRADOR);
+- NOVO: liberar um operador em um evento/portão (POST /eventos/:id/operadores).
+
+Ainda NÃO são usados pelo frontend (ver seção 7):
+- resumo do evento (dashboard central);
+- listar/resolver pendências de sincronização (conflitos/rejeições);
+- editar evento (PATCH).
+
+
+2. O INDEXEDDB ESTÁ FUNCIONANDO CORRETAMENTE?
+---------------------------------------------
+
+Sim, no navegador de computador.
+
+- Validação local (VÁLIDO, JÁ UTILIZADO, PORTÃO INCORRETO, INVÁLIDO), leituras
+  simultâneas, atomicidade e persistência foram testadas em etapas anteriores.
+- Em 12/11, os testes completos no Chrome (seção 9) usaram o IndexedDB real com
+  câmera simulada, offline, reconexão e envio ao servidor: tudo aprovado.
+
+Ressalva: NÃO foi testado em celular real (Android, iPhone, câmera física,
+PWA instalada).
+
+Instalação como PWA (TESTE_INSTALACAO_PWA_2026-11-08.md):
+- Requisitos de instalação APROVADOS no site publicado, em Edge/Chromium headless
+  com tela de celular simulada (390 x 844).
+- Aprovados: HTTPS, manifesto, ícones 192/512/180 px, meta do iPhone, Service
+  Worker ativo, sem erros de instalabilidade, oferta de instalação e tela de
+  login aberta pelo cache sem rede.
+- Ainda falta teste manual em Android e iPhone físicos.
+
+
+3. O BACK E O FRONT ESTÃO COMPLETAMENTE INTEGRADOS?
+---------------------------------------------------
+
+Ainda não, mas os dois maiores buracos foram tratados no frontend:
+
+- FUNC-002 (ALTA) — validações não sincronizavam:
+  IMPLEMENTADO no frontend (seção 6.1). Falta validar na Vercel.
+
+- FUNC-003 (MÉDIA) — gestão sem interface:
+  PARCIALMENTE IMPLEMENTADO (seção 6.2): criar evento, portões e ingressos com
+  QR Code e listar ingressos. Ainda sem interface: editar evento, importar CSV
+  manualmente, listar/resolver pendências.
+
+- FUNC-001 — listar pendências falha na Vercel (HTTP 400 PARAMETRO_INVALIDO):
+  continua em aberto (backend).
+
+Fluxo do GESTOR: a aprovação e a troca de portão já gravam a liberação REAL no
+servidor (seção 6.4). O código do evento e a lista de solicitações ainda ficam
+só no navegador (demonstração), porque o backend não tem o papel GESTOR nem
+esses endpoints (seção 8.2).
+
+
+4. O BACKEND ESTÁ COMPLETO?
+---------------------------
+
+Bem avançado, mas não completo. Segundo o relatório de 08/11, 226 testes aprovados.
+
+Já existe: autenticação JWT; consultas de eventos, portões e ingressos;
+POST /sincronizacao; resumo do evento; administração (criar/editar evento,
+criar portão, importar CSV, listar e resolver pendências); NOVO em 12/11:
+concessão de operador por evento/portão (D11).
+
+Falta: papel GESTOR, código do evento, solicitação de acesso pelo servidor,
+horário do evento, cadastro de usuários e a correção do FUNC-001 (seção 8).
+
+
+5. VÁRIOS CELULARES OFFLINE SINCRONIZAM SOZINHOS AO RECONECTAR?
+---------------------------------------------------------------
+
+Agora SIM no código (falta validar no site publicado).
+
+- Cada celular guarda as validações no próprio IndexedDB e envia ao servidor:
+  ao entrar na conta, quando a internet volta, quando o app volta a ficar
+  visível, logo após cada VÁLIDO (se online) e pelo botão "Sincronizar agora".
+- Testado com dois celulares simulados validando o MESMO ingresso offline:
+  ao reconectar, o primeiro recebeu CONFIRMADA e o segundo CONFLITO; o servidor
+  contou UMA única entrada. Reenvio não duplica.
+
+Limites:
+- O login fica só na memória (por segurança). Depois de fechar o app, o envio
+  só acontece quando o operador entrar de novo; até lá a fila fica guardada.
+- No iPhone não há envio em segundo plano: só com o app aberto.
+- Offline, dois aparelhos podem liberar o mesmo ingresso; o conflito só é
+  detectado depois, no servidor (não há como evitar sem conexão).
+
+
+6. NOVIDADES (11 e 12/11/2026)
+------------------------------
+
+6.1 Sincronização da fila (POST /sincronizacao)
+- Novo src/sincronizacao.js (coordenador do envio) e funções em src/db.js e
+  src/api.js.
+- Lotes agrupados por evento + portão + dispositivo DE CADA REGISTRO, até 100
+  itens; idLocal = id local (nunca muda), então reenviar é seguro.
+- Resposta conferida item a item antes de gravar; nada é marcado sem resposta
+  válida.
+- Resultado guardado em cada registro (campos novos, sem mudar a estrutura do
+  IndexedDB, que continua na versão 1): statusEnvio CONFIRMADA (com
+  validacaoId), CONFLITO ou REJEITADA (com motivo).
+- Conflitos/rejeições ficam guardados, não são reenviados e NÃO bloqueiam a
+  troca de portão (decisão da Isadora — ver demanda 8.9). Só o que aguarda
+  envio bloqueia a troca.
+- Falhas: 401 aguarda novo login; 403/400/415/resposta fora do contrato param e
+  preservam a fila; rede/429/5xx tentam de novo com espera crescente
+  (1, 2, 4, 8, 16, 30 s), respeitando Retry-After.
+- Um envio por vez, inclusive entre abas (Web Locks).
+- Scanner mostra "Última sincronização" e a situação real do envio; dashboard
+  mostra aguardando / confirmadas / conflitos / rejeitadas.
+
+6.2 Gestão de eventos e ingressos com QR Code (API real, ADMINISTRADOR)
+- Telas novas: #/gestor (Painel do gestor), #/gestor/novo-evento e
+  #/gestor/evento. O botão "Painel do gestor" aparece em "Meus eventos" para
+  quem tem acessoGlobal (ADMINISTRADOR).
+- Ações exclusivas do gestor, todas no Painel do gestor: criar evento, ver o
+  código do evento, aprovar/rejeitar operadores atribuindo um portão, alterar
+  o portão e gerar ingressos.
+- Em "Meus eventos", o gestor também pode OPERAR: escolhe o evento, o portão
+  (qualquer um), baixa os ingressos e usa o scanner como um operador.
+- O operador vê em "Meus eventos" o campo "Vincular-se a um novo evento"
+  (código do evento), suas solicitações e os "Eventos liberados para operar".
+- Criar evento: nome, data, HORÁRIO (exibido, mas ainda não salvo — demanda
+  8.3), local e portões, cada portão com sua quantidade de ingressos.
+- O frontend sorteia códigos únicos PC-XXXXXXXX (8 caracteres, gerador
+  criptográfico, sem caracteres ambíguos) e importa pelo endpoint existente
+  POST /eventos/:id/ingressos/importar (CSV, até 1000 por importação).
+  Se o servidor recusar por código repetido (422 CSV_INVALIDO, nada gravado),
+  sorteia novos códigos e tenta de novo; se a conexão cair, NÃO repete sozinho
+  (pode já ter gravado).
+- Tela do evento: portões com contagem de ingressos/utilizados, "Adicionar
+  ingressos", "Adicionar portão", lista de ingressos com QR Code (evento, data,
+  local, portão de acesso), filtro por portão e impressão.
+- Testado: evento com 30 + 5 ingressos gravado no servidor; um operador
+  preparou o dispositivo e a câmera leu um ingresso GERADO → VÁLIDO →
+  sincronizado → gestor viu como UTILIZADO.
+- Nova dependência: qrcode 1.5.4 (MIT), autorizada, versão fixa.
+- src/http.js passou a aceitar corpo em texto (CSV) com tipo de conteúdo próprio.
+
+6.3 Código do evento e solicitações (DEMONSTRAÇÃO no navegador)
+- Código EVT-XXXXXX e solicitações dos operadores ficam no localStorage do
+  navegador (src/acessoEvento.js), ligados aos eventos reais pelo id. Gestor e
+  operador precisam usar o mesmo navegador. Formato NÃO é contrato da API.
+
+6.4 Concessão de operador no backend (D11, autorizada pelo Gabriel)
+- POST /eventos/:eventoId/operadores  { usuarioId, portaoId }, só
+  ADMINISTRADOR. Grava em usuarios_eventos / usuarios_portoes (as mesmas
+  tabelas do npm run operador), sem tabela nova nem migração.
+- Um portão por operador em cada evento: enviar outro portão substitui o
+  anterior (é o "Alterar portão"). Repetir é idempotente.
+- Erros: 404 EVENTO_NAO_ENCONTRADO, 404 OPERADOR_NAO_ENCONTRADO (inexistente,
+  inativo ou não OPERADOR), 422 PORTAO_INCOMPATIVEL, 400 DADOS_INVALIDOS.
+- SQLite e PostgreSQL. Documentado em backend/docs/contrato-administracao.md e
+  backend/docs/decisoes.md (D11). Novo teste backend/tests/concessao-operador.test.js.
+- No front, "Aprovar" e "Alterar portão" chamam o endpoint primeiro; só se o
+  servidor confirmar a solicitação muda de situação.
+- Cuidado: trocar o portão de um operador com validações ainda NÃO enviadas do
+  portão antigo faz o servidor recusar essas validações (ficam no aparelho).
+
+6.5 Outras alterações
+- Login: botão "Cadastrar" apenas visual, sem ação (demanda 8.4).
+- Telas demo de gestor/operador (fora das rotas): corrigido "[object Object]"
+  que aparecia por causa do novo formato do router (app, { signal }).
+- Testes do frontend: 14 (antes 8).
+- (Já commitado antes, no commit 1f478cf, e mantido: pedido de armazenamento
+  persistente e atualização segura do IndexedDB.)
+
+
+7. O QUE AINDA FALTA INTEGRAR ENTRE FRONT E BACK
+------------------------------------------------
+
+Endpoints que JÁ EXISTEM no backend, mas o frontend ainda não usa:
+- GET /eventos/:id/resumo — dashboard central (hoje o dashboard mostra só os
+  dados do aparelho);
+- GET /eventos/:id/pendencias e POST /pendencias/:id/resolver — tratar
+  conflitos/rejeições (bloqueado pelo FUNC-001 na Vercel);
+- PATCH /eventos/:id — editar evento;
+- importação de CSV pronto (hoje o front só importa os códigos que ele gera).
+
+Funcionalidades que dependem de endpoints NOVOS no backend (seção 8):
+- código do evento e solicitação de acesso pelo servidor (a aprovação e a troca
+  de portão já usam o endpoint novo da seção 6.4);
+- horário do evento;
+- cadastro de usuários.
+
+Publicação:
+- Após o deploy, validar no site publicado: login, sincronização, gestão e a
+  concessão de operador (esta depende da demanda 8.12).
+
+
+8. DEMANDAS PARA O GABRIEL
+--------------------------
+
+8.1 PERFIS: GESTOR x ADMINISTRADOR  (prioridade ALTA — definição de produto)
+- Hoje o backend tem ADMINISTRADOR (acesso GLOBAL a todos os eventos) e
+  OPERADOR (concessões por evento/portão via linha de comando).
+- O CLAUDE.md define o GESTOR: cria e gerencia SOMENTE os próprios eventos,
+  compartilha o código do evento e aprova operadores atribuindo um portão.
+  GESTOR não é a mesma coisa que ADMINISTRADOR.
+- Solução provisória no front: as telas de gestão aparecem para quem tem
+  acessoGlobal (ADMINISTRADOR). Quando o GESTOR existir, o front precisa saber,
+  pelo /auth/me, o papel e quais eventos a pessoa gerencia.
+- Pedido: criar o papel GESTOR com escopo por evento (quem cria o evento passa
+  a geri-lo), manter o ADMINISTRADOR global e informar o formato do /auth/me.
+
+8.2 CÓDIGO DO EVENTO E SOLICITAÇÃO DE ACESSO  (ALTA)
+- JÁ FEITO (D11): a aprovação/troca de portão cria a concessão no servidor
+  (POST /eventos/:id/operadores, seção 6.4).
+- Ainda falta: gerar/consultar o código exclusivo do evento; operador
+  solicitar acesso informando o código; gestor listar solicitações e
+  rejeitar; operador listar a situação de cada solicitação. Hoje isso fica só
+  no navegador (seção 6.3). Ao criar esses endpoints, a aprovação pode passar
+  a usar a concessão da D11.
+- Referência visual: telas de demonstração no frontend (screens/gestor-*.js,
+  screens/operador.js, src/demo/). O formato dos dados da demonstração NÃO é
+  contrato: o contrato deve ser definido pelo backend.
+
+8.3 HORÁRIO DO EVENTO  (MÉDIA)
+- O banco guarda só a data e o contrato recusa horário.
+- Pedido: campo de horário no evento, aceito em POST/PATCH /eventos e devolvido
+  em GET /eventos. O front já tem o campo na tela (com aviso) e os ingressos
+  mostram "Horário a definir" até lá.
+
+8.4 CADASTRO DE USUÁRIOS  (MÉDIA)
+- O login tem um botão "Cadastrar" apenas visual. Não existe endpoint público
+  de cadastro; contas são criadas por linha de comando.
+- Pedido: definir se haverá cadastro pelo app (ex.: operador se cadastra e
+  depois solicita acesso por código) e, se sim, o endpoint e as regras
+  (senha: 8–14 caracteres, maiúscula e caractere especial, como no login).
+
+8.5 FUNC-001 — LISTAR PENDÊNCIAS FALHA NA VERCEL  (ALTA)
+- GET /eventos/:id/pendencias retorna 400 PARAMETRO_INVALIDO só na Vercel.
+- Necessário para o administrador tratar conflitos/rejeições que agora chegam
+  ao servidor pela sincronização.
+
+8.6 VALIDAR A SINCRONIZAÇÃO NO AMBIENTE PUBLICADO  (ALTA)
+- O front já envia o POST /sincronizacao (testado contra o backend local com
+  SQLite). Após o deploy, validar com PostgreSQL/Vercel: confirmação, conflito
+  entre dois aparelhos, reenvio idempotente e resumo.
+
+8.7 GERAÇÃO DE INGRESSOS NO SERVIDOR  (BAIXA — opcional)
+- Hoje o front sorteia os códigos e usa a importação CSV (tudo ou nada, até
+  1000 por vez). Funciona, mas criar evento + portões + ingressos são várias
+  chamadas separadas: se a conexão cair no meio, o evento fica incompleto (a
+  tela permite concluir).
+- Sugestão: endpoint que crie ingressos em quantidade (ou o evento completo em
+  uma única transação), gerando os códigos no servidor.
+
+8.8 PERMISSÃO DE QUEM CRIA O EVENTO  (MÉDIA)
+- Criar evento/portão não concede acesso de operador a ninguém. Com o GESTOR,
+  definir o que acontece automaticamente ao criar o evento.
+
+8.9 CONFLITOS E REJEIÇÕES NÃO BLOQUEIAM A TROCA  (ALINHAMENTO)
+- O contrato de sincronização (seção 9, item 6) pede bloquear a troca de
+  evento/portão enquanto houver qualquer registro não sincronizado, incluindo
+  CONFLITO e REJEITADA.
+- Decisão da Isadora no front: só o que AGUARDA ENVIO bloqueia; conflitos e
+  rejeições já estão registrados no servidor e ficam guardados no aparelho
+  para revisão. Motivo: sem tela de resolução, um único conflito travaria o
+  aparelho.
+- Pedido: confirmar se o backend concorda ou propor o fluxo de resolução.
+
+8.10 REGRA DE TROCA DE OPERAÇÃO  (ALINHAMENTO)
+- O CLAUDE.md diz que a troca pode descartar dados locais (inclusive
+  pendências) após confirmação; o código atual BLOQUEIA a troca enquanto houver
+  validações aguardando envio, como pede o contrato do backend. Alinhar e
+  atualizar o CLAUDE.md.
+
+8.11 AMBIENTE LOCAL  (INFORMATIVO)
+- Neste computador foram criados backend/.env (segredo aleatório) e o banco
+  SQLite local com seed de desenvolvimento, pelos scripts oficiais
+  (npm run setup e db:seed). Nenhuma conta foi criada nesse banco.
+- Este computador usa Node 26; o projeto pede Node 24. Até agora funcionou,
+  mas convém padronizar.
+
+8.12 PERMISSÕES NO SUPABASE PARA A D11  (ALTA — antes de usar na Vercel)
+- Em produção, a conta passcheck_runtime só LÊ as tabelas de concessão.
+- Aplicar o bloco D11 de deploy/postgres-runtime-grants.sql (INSERT em
+  usuarios_eventos e usuarios_portoes; DELETE em usuarios_portoes). NÃO foi
+  aplicado. Sem isso, "Aprovar" e "Alterar portão" mostram erro na Vercel
+  ("Nada foi alterado"); o resto do app não é afetado.
+- Revisar o código do endpoint (backend/src/routes, services, repositories e
+  validation de administração e db/postgres/repositories.js).
+
+
+9. TESTES EXECUTADOS
+--------------------
+
+- Frontend: 14 testes automatizados — todos aprovados.
+- Build do frontend — aprovado.
+- Sincronização (Chrome headless, backend local isolado, banco temporário, dois
+  celulares simulados com câmera falsa): 22 cenários aprovados.
+- Gestão de eventos e ingressos com QR Code (Chrome headless, backend local
+  isolado): 19 cenários aprovados, incluindo leitura pela câmera de um
+  ingresso gerado pelo sistema.
+- Backend (após a D11): 213 testes, 209 aprovados, 0 falhas, 4 ignorados
+  (os de PostgreSQL, como antes). 5 testes novos da concessão.
+- Concessão de operador no navegador: 12 cenários aprovados (pedido pelo
+  código, aprovação no portão Sul, evento liberado, preparação, leitura VÁLIDO,
+  sincronização, troca para o portão Leste).
+- Gestor operando por "Meus eventos" (escolha de portão, download dos
+  ingressos) e Painel do gestor inalterado: aprovado.
+- Nada foi testado em celular real nem no site publicado.
+
+
+10. OBSERVAÇÕES
+---------------
+
+Offline, o app abre, mas NÃO faz login: o login depende do servidor. A operação
+offline só funciona se o dispositivo já tiver sido preparado com internet
+(login, escolha do evento/portão e download dos ingressos).
+O botão "Continuar operação preparada" da tela de login é o caminho para
+voltar ao scanner quando o app é reaberto SEM internet. Ele abre a operação da
+conta que preparou o aparelho; as validações só são enviadas quando essa mesma
+conta entrar de novo com internet. Outra conta não consegue entrar enquanto
+houver validações aguardando envio.
+
+A seção "Progresso atual" do CLAUDE.md está desatualizada (versão de 24/10:
+ainda diz que o frontend usa mocks e que a sincronização está pendente).
